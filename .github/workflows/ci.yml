@@ -2,7 +2,8 @@ name: ci
 
 # Terraform config scanning (trivy) on PRs and pushes to the default branch;
 # secret scanning (gitleaks) runs in privacy.yml. Runs on every change; the path-filtered suites
-# live in terraform.yml and python.yml.
+# live in terraform.yml and python.yml. This stack's cost/architecture
+# trade-offs live in .trivyignore.
 
 on:
   pull_request:
@@ -38,7 +39,7 @@ jobs:
           # format: sarif otherwise makes the action unset TRIVY_SEVERITY
           # entirely before invoking trivy (see its entrypoint.sh's SARIF
           # handling), so exit-code would gate on every severity, not just
-          # HIGH/CRITICAL as configured above.
+          # HIGH/CRITICAL as configured above and triaged in .trivyignore.
           limit-severities-for-sarif: 'true'
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

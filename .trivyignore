@@ -1,0 +1,25 @@
+# Deliberate cost/architecture trade-offs for this single-instance stack.
+# Re-triage on the next `trivy config` drift, not on a schedule.
+
+# SNS topics (operational alerts, here and in the keel and status-page
+# modules): payloads are alarm names and one-line summaries; a CMK forces
+# every publisher principal into the key policy and turns a misconfigured
+# grant into a silently dropped message rather than an error.
+AVD-AWS-0095
+
+# Delivery bucket: SSE-S3 (AES256) encrypted; it holds build artifacts and
+# rendered instance config, and a CMK adds cost and key-policy upkeep for
+# the instance role with no meaningful gain.
+AVD-AWS-0132
+
+# No WAF in front of CloudFront: one instance behind a private VPC origin
+# and a login-gated app; WAF's fixed and per-request cost outweighs the
+# exposure for this threat model.
+AVD-AWS-0011
+
+# Open egress on the app security group: the instance has no NAT gateway
+# and needs outbound IPv6 to arbitrary IRC servers and AWS endpoints, which
+# no fixed destination list can enumerate. Ingress is limited to the
+# CloudFront VPC origin and the Instance Connect Endpoint
+# (modules/network/security_groups.tf).
+AVD-AWS-0104
