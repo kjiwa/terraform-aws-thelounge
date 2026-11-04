@@ -1,0 +1,3 @@
+# Resolve the `# shellcheck source=` directives relative to the sourcing script
+# rather than shellcheck's CWD, so `shellcheck -x` works from any directory.
+source-path=SCRIPTDIR

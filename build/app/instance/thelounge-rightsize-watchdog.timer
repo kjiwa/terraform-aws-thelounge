@@ -1,0 +1,17 @@
+# Fires the rightsize check. Daily 09:00 UTC is only the shipped fallback:
+# user-data overrides OnCalendar via a drop-in from the
+# rightsize_schedule module input (daily to hourly), so set the schedule there,
+# not here. The check is a no-op when the instance is already on a
+# preferred type (or is not Spot), and the script's own uptime cooldown and
+# capacity gate bound replacement churn under aggressive schedules, so the
+# timer frequency is a responsiveness knob, not a safety one. No
+# Persistent=: the instance is always on, and a missed tick self-corrects
+# at the next one.
+[Unit]
+Description=Run thelounge rightsize check
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+
+[Install]
+WantedBy=timers.target

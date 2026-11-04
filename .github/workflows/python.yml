@@ -1,0 +1,48 @@
+name: python
+
+# Lambda and status plugin tests (pytest). No AWS credentials are needed.
+
+on:
+  pull_request:
+    paths:
+      - 'modules/edge/lambda/**'
+      - 'modules/llm-gateway/lambda/**'
+      - 'modules/status/plugin/**'
+      - 'modules/status/tests/**'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
+  push:
+    branches: [main, master]
+    paths:
+      - 'modules/edge/lambda/**'
+      - 'modules/llm-gateway/lambda/**'
+      - 'modules/status/plugin/**'
+      - 'modules/status/tests/**'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Workaround for GitHub's Node 20 -> 24 runtime migration for JavaScript
+  # actions until CI stops emitting Node 20 deprecation warnings.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest

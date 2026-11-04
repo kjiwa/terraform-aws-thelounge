@@ -1,0 +1,13 @@
+# Fires the health check every minute, starting 90s after boot (user_data
+# and the first converge tick own that window; the script also self-gates
+# on instance.env and /opt/thelounge/current existing).
+[Unit]
+Description=Run thelounge app health check every minute
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+AccuracySec=15
+
+[Install]
+WantedBy=timers.target

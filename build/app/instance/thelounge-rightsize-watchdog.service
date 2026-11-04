@@ -1,0 +1,12 @@
+# Single rightsize tick: replace the instance if it is not running one of
+# the Terraform-preferred (cheapest) types. Driven by
+# thelounge-rightsize-watchdog.timer; installed and enabled by user_data on
+# first boot, kept current thereafter by thelounge-converge.sh.
+[Unit]
+Description=thelounge scale-back to the preferred Spot tier
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/thelounge-rightsize-watchdog

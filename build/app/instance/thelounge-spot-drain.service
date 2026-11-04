@@ -1,0 +1,17 @@
+# Watches IMDS for the Spot interruption notice and cleanly stops thelounge
+# before reclaim. Installed and enabled by user_data on first boot, kept
+# current thereafter by thelounge-converge.sh's compare-and-install step.
+# Starts at boot and polls immediately; the drain action tolerates
+# thelounge.service not being started yet (it just syncs).
+[Unit]
+Description=Drain thelounge on EC2 Spot interruption notice
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/thelounge-spot-drain
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,66 @@
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.3
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        # Parallel `terraform init` races on TF_PLUGIN_CACHE_DIR in CI
+        # (hashicorp/terraform#31964).
+        args:
+          - --hook-config=--parallelism-limit=1
+        # The root module and modules/edge declare configuration_aliases, which
+        # cannot bind when a module is validated standalone as this hook does
+        # -- there is no caller to supply the alias (hashicorp/terraform#28490).
+        # tflint still lints both directly. This hook runs per-directory and
+        # does not walk up to callers, so CI validates examples/*/ and runs
+        # terraform test to cover them in context.
+        exclude: ^([^/]+\.tf|modules/edge/.*)$
+      - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        # -x follows sourced files (scripts/common.sh) so vars defined there
+        # aren't flagged unused/undefined; the shebangs are #!/bin/sh, so
+        # shellcheck enforces POSIX automatically, including `local` (SC3043).
+        args: [-x]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: hygiene
+        name: hygiene
+        entry: sh scripts/hygiene.sh
+        language: system
+        exclude: ^LICENSE$
+      - id: script-tests
+        name: script tests
+        entry: sh scripts/tests/run.sh
+        language: system
+        pass_filenames: false
+        files: ^(scripts/|build/.*\.sh$)
+      - id: keel-drift
+        name: vendored keel scripts match their tag
+        entry: sh scripts/check-keel-drift.sh
+        language: system
+        pass_filenames: false
+        files: ^scripts/keel/
+      - id: docs
+        name: README module reference is current
+        entry: sh scripts/docs.sh --check
+        language: system
+        pass_filenames: false
+        files: ^([^/]+\.tf|\.terraform-docs\.yml|README\.md)$

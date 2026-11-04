@@ -1,0 +1,38 @@
+# The Lounge itself. Deliberately NOT enabled at boot (no `systemctl
+# enable`, only [Install] metadata for reference): thelounge-converge.sh
+# starts or restarts it directly once a release exists at
+# /opt/thelounge/current, and is the only thing that ever does. See
+# user_data.sh.tftpl's install_instance_files, which enables every other
+# unit in this suite but skips this one on purpose.
+[Unit]
+Description=The Lounge IRC client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=thelounge
+Environment=THELOUNGE_HOME=/srv/thelounge/data
+ExecStart=/opt/thelounge/current/node/bin/node /opt/thelounge/current/app/node_modules/.bin/thelounge start
+Restart=always
+RestartSec=5
+
+# The Lounge's SIGTERM handler quits every IRC network, closes the message
+# stores, then self-exits within ~3s (its own suicide timer). 20s is that
+# with room to spare, and well inside the Spot notice's ~2 min budget. The
+# explicit bound matters for the health watchdog, whose oneshot tick calls
+# `systemctl stop` on an app that is by definition already unresponsive:
+# systemd's 90s default would eat that tick's entire start budget.
+TimeoutStopSec=20
+
+# Read-only root except the data volume; no privilege escalation; an
+# isolated /tmp; no access to other users' home directories (thelounge has
+# none of its own -- DATA_ROOT is its home, under /srv, not /home, so this
+# does not interfere with it).
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/thelounge
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

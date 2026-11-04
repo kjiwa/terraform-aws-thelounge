@@ -1,0 +1,13 @@
+# Single health-check tick: curl localhost, count consecutive failures,
+# terminate the instance at the threshold (self-healing via ASG
+# replacement). Driven by thelounge-health-watchdog.timer; installed and
+# enabled by user_data on first boot, kept current thereafter by
+# thelounge-converge.sh.
+[Unit]
+Description=thelounge app health check tick (self-healing via ASG replacement)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/thelounge-health-watchdog

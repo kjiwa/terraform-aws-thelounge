@@ -1,0 +1,15 @@
+# Deploy mechanism: there is no CodeDeploy. Syncs instance scripts/units,
+# the app release, and instance config/data from S3, restarting
+# thelounge.service only if something actually changed (or starting it if
+# it is not running, e.g. after a reboot). Driven by
+# thelounge-converge.timer; installed and enabled by user_data on first
+# boot, thereafter kept current by thelounge-converge.sh's own
+# compare-and-install step.
+[Unit]
+Description=thelounge converge (config/release sync and deploy)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/thelounge-converge

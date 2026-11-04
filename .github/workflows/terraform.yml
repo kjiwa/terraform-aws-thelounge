@@ -1,0 +1,146 @@
+name: terraform
+
+# Pre-commit suite (terraform fmt/validate/tflint + ruff + actionlint +
+# shellcheck) on PRs and pushes to the default branch. No AWS credentials are
+# needed: terraform_validate uses -backend=false, tflint only downloads its
+# ruleset plugin, and shellcheck-py bundles its own binary. A real
+# `terraform plan` (which needs state + cloud auth) is deliberately not run
+# here. .github/workflows/** is listed so workflow edits still reach the
+# actionlint hook, and the docs paths so the hygiene and README checks see doc
+# edits.
+
+on:
+  pull_request:
+    paths:
+      - '*.tf'
+      - 'modules/**'
+      - 'tests/**'
+      - 'examples/**'
+      - '.tflint.hcl'
+      - 'build/app/**'
+      - 'scripts/**'
+      - 'README.md'
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.terraform-docs.yml'
+      - '.shellcheckrc'
+      - '.pre-commit-config.yaml'
+      - '.terraform-version'
+      - '.github/workflows/**'
+  push:
+    branches: [main, master]
+    paths:
+      - '*.tf'
+      - 'modules/**'
+      - 'tests/**'
+      - 'examples/**'
+      - '.tflint.hcl'
+      - 'build/app/**'
+      - 'scripts/**'
+      - 'README.md'
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.terraform-docs.yml'
+      - '.shellcheckrc'
+      - '.pre-commit-config.yaml'
+      - '.terraform-version'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Workaround for GitHub's Node 20 -> 24 runtime migration for JavaScript
+  # actions until CI stops emitting Node 20 deprecation warnings.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      # Single source of truth for the Terraform CLI version: the same
+      # .terraform-version that tenv/tfenv reads locally. setup-terraform does
+      # not read it natively, so surface it as a step output.
+      - id: tfver
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: ${{ steps.tfver.outputs.version }}
+          # The wrapper rewrites stdout/exit codes and confuses the hooks.
+          terraform_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6
+        with:
+          tflint_version: v0.65.0
+      # Plugin cache keyed on the pinned ruleset version; on a hit the init
+      # below verifies and skips the download (and its GitHub API call).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ hashFiles('.tflint.hcl') }}
+          restore-keys: |
+            tflint-
+      # Provider cache for every `terraform init` below (validate hook, the
+      # examples loop, and terraform test); terraform requires the directory to exist.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugins-${{ hashFiles('examples/*/.terraform.lock.hcl') }}
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      # Install the AWS ruleset pinned in .tflint.hcl so the
+      # terraform_tflint hook finds it. GITHUB_TOKEN avoids the unauthenticated
+      # GitHub API rate limit when fetching the plugin release.
+      - name: tflint init
+        run: tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+      # The terraform_validate hook excludes the root module and modules/edge,
+      # which declare configuration_aliases and cannot validate standalone.
+      # Validate every example instead (each is a caller that supplies the
+      # aliases) and run the contract tests, which bind the aliases to mock
+      # providers. -backend=false keeps it credential-free. The hook is
+      # per-changed-dir, so a commit touching only an excluded module relies
+      # on this step.
+      - name: validate examples
+        run: |
+          for example in examples/*/; do
+            terraform -chdir="$example" init -backend=false -input=false
+            terraform -chdir="$example" validate
+          done
+      - name: terraform test
+        run: |
+          terraform init -backend=false -input=false
+          terraform test
+          for dir in modules/*/; do
+            [ -d "$dir/tests" ] || continue
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" test
+          done
+      # Every provider block in an example's lock file must carry at least
+      # three h1: hashes (darwin_arm64, darwin_amd64, linux_amd64; a fourth
+      # platform such as linux_arm64 is allowed). CI's own init only
+      # proves linux_amd64, so a lock rewrite that dropped the darwin platforms
+      # (e.g. an unreconciled Dependabot PR) would pass CI and fail later on a
+      # Mac. Fix: terraform providers lock -platform=darwin_arm64
+      # -platform=darwin_amd64 -platform=linux_amd64
+      - name: check lock file platform coverage
+        run: |
+          for lock in examples/*/.terraform.lock.hcl; do
+            providers=$(grep -c '^provider "' "$lock")
+            hashes=$(grep -c '^    "h1:' "$lock")
+            [ "$hashes" -ge $((providers * 3)) ] ||
+              { echo "::error file=$lock::expected at least 3 h1 hashes per provider ($providers providers), found $hashes"; exit 1; }
+          done

@@ -1,0 +1,31 @@
+# Read-only status facts API, served on :9001 behind CloudFront's /status/api
+# cache behavior (see thelounge-status.py's module docstring for the full
+# design). Unlike thelounge.service, this IS enabled at boot (user_data's
+# install_instance_files) and kept restarted on its own changes by
+# thelounge-converge.sh -- it has no release or config of its own to
+# converge, so its only trigger is its own script or unit file changing.
+[Unit]
+Description=The Lounge status page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=thelounge
+ExecStart=/usr/local/bin/thelounge-status
+Restart=always
+RestartSec=5
+
+# Read-only from this unit's point of view: no ReadWritePaths at all, unlike
+# thelounge.service. It reads users/*.json and logs/*.sqlite3 off the data
+# volume (mode=ro sqlite opens) but never writes to them or anywhere else.
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ProtectHome=true
+
+# Shares this box's 512MB with node; a runaway sidecar must not be able to
+# starve thelounge.service of memory.
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

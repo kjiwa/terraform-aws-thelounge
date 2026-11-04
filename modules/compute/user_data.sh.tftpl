@@ -1,0 +1,293 @@
+#!/bin/sh
+# Boot glue: attach and mount the data volume, lay down swap, associate the
+# EIP if the enable_public_ipv4 hatch is on, turn on unattended security
+# updates, then fetch and install the on-instance script/unit suite from S3
+# and start it. The readonly assignments below are Terraform templatefile()
+# substitutions baked in at plan time, not shell parameter expansions; the
+# rest of the script is plain POSIX sh operating on the shell copies.
+set -eu
+
+readonly REGION="${region}"
+readonly EIP_ALLOC="${eip_allocation_id}"
+readonly EBS_VOLUME_ID="${ebs_volume_id}"
+readonly CONFIG_BUCKET="${config_bucket}"
+readonly PREFERRED_INSTANCE_TYPES="${preferred_instance_types}"
+readonly RIGHTSIZE_SCHEDULE="${rightsize_schedule}"
+readonly RIGHTSIZE_MIN_UPTIME_HOURS="${rightsize_min_uptime_hours}"
+
+readonly CONFIG_PREFIX="config"
+readonly ARTIFACT_PREFIX="artifacts"
+readonly DATA_ROOT="/srv/thelounge"
+readonly THELOUNGE_HOME="/srv/thelounge/data"
+readonly DEVICE="/dev/sdf"
+readonly INSTANCE_ENV="/etc/thelounge/instance.env"
+
+# Dual-stack EC2/S3 endpoints are reachable over IPv6 with no NAT/IGW; the
+# IPv4-only default endpoints are not. Every `aws` call here, and every
+# on-instance script downstream (via instance.env), needs this.
+export AWS_USE_DUALSTACK_ENDPOINT=true
+
+INSTANCE_ID="$(cat /var/lib/cloud/data/instance-id)"
+readonly INSTANCE_ID
+
+log() {
+  # stderr, not stdout: a message from inside a command substitution must
+  # still reach cloud-init-output.log, not get captured into the caller's
+  # variable.
+  echo "[user-data] $*" | tee -a /var/log/user-data.log >&2
+}
+
+attach_volume() {
+  log "Waiting for EBS volume $EBS_VOLUME_ID to become available..."
+  aws ec2 wait volume-available \
+    --volume-ids "$EBS_VOLUME_ID" \
+    --region "$REGION"
+  log "Attaching EBS volume $EBS_VOLUME_ID..."
+  aws ec2 attach-volume \
+    --volume-id "$EBS_VOLUME_ID" \
+    --instance-id "$INSTANCE_ID" \
+    --device "$DEVICE" \
+    --region "$REGION"
+  aws ec2 wait volume-in-use \
+    --volume-ids "$EBS_VOLUME_ID" \
+    --region "$REGION"
+}
+
+# AWS reporting volume-in-use doesn't mean the guest has enumerated the
+# device yet, and on Nitro the namespace isn't guaranteed to be nvme1n1.
+# Match the NVMe controller serial (volume ID with dashes stripped) instead.
+find_block_device() {
+  _find_block_device_dev=""
+  _find_block_device_serial_target="$(echo "$EBS_VOLUME_ID" | tr -d '-')"
+  for _find_block_device_ctrl in /sys/class/nvme/nvme*; do
+    [ -r "$_find_block_device_ctrl/serial" ] || continue
+    if [ "$(tr -d ' ' <"$_find_block_device_ctrl/serial")" = "$_find_block_device_serial_target" ]; then
+      _find_block_device_dev="/dev/$(basename "$_find_block_device_ctrl")n1"
+      if [ -b "$_find_block_device_dev" ]; then
+        echo "$_find_block_device_dev"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+wait_for_block_device() {
+  _wait_for_block_device_dev=""
+  _wait_for_block_device_i=0
+  while [ "$_wait_for_block_device_i" -lt 60 ]; do
+    if _wait_for_block_device_dev="$(find_block_device)"; then
+      echo "$_wait_for_block_device_dev"
+      return 0
+    fi
+    _wait_for_block_device_i=$((_wait_for_block_device_i + 1))
+    sleep 1
+  done
+  log "ERROR: block device for $EBS_VOLUME_ID did not appear within 60s"
+  return 1
+}
+
+# First boot on a fresh volume only; a restored or reattached volume already
+# has a filesystem and is left alone.
+format_if_needed() {
+  if ! blkid "$1" >/dev/null 2>&1; then
+    log "Formatting ext4 on $1..."
+    mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0 "$1"
+  fi
+}
+
+# By UUID, not device path: the NVMe namespace isn't stable across boots.
+# nofail keeps a missing volume from wedging the boot into emergency mode --
+# fetch_instance_files below still runs regardless, so the watchdogs install
+# even if there's no data to serve yet.
+ensure_mounted() {
+  mkdir -p "$DATA_ROOT"
+  _ensure_mounted_uuid="$(blkid -s UUID -o value "$1")"
+  if ! grep -q "$_ensure_mounted_uuid" /etc/fstab; then
+    echo "UUID=$_ensure_mounted_uuid $DATA_ROOT ext4 defaults,nofail 0 2" >>/etc/fstab
+  fi
+  mount -a
+}
+
+mount_data_volume() {
+  _mount_data_volume_block_dev="$(wait_for_block_device)"
+  log "Block device: $_mount_data_volume_block_dev"
+  format_if_needed "$_mount_data_volume_block_dev"
+  ensure_mounted "$_mount_data_volume_block_dev"
+  log "EBS mounted at $DATA_ROOT"
+}
+
+# EIP_ALLOC is non-empty only when enable_public_ipv4 allocated one; a no-op
+# on the default zero-IPv4 posture.
+associate_eip() {
+  [ -n "$EIP_ALLOC" ] || return 0
+  log "Associating EIP $EIP_ALLOC with $INSTANCE_ID..."
+  aws ec2 associate-address \
+    --allocation-id "$EIP_ALLOC" \
+    --instance-id "$INSTANCE_ID" \
+    --allow-reassociation \
+    --region "$REGION"
+}
+
+setup_swap() {
+  if [ ! -f /swapfile ]; then
+    log "Creating 1G swapfile..."
+    fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
+    chmod 600 /swapfile
+    mkswap /swapfile
+    echo "/swapfile none swap sw 0 0" >>/etc/fstab
+  fi
+  swapon -a || true
+}
+
+# dnf-automatic applies security updates unattended on its own timer.
+# Failure here is logged and swallowed, not fatal to boot -- serving The
+# Lounge outranks patching promptness, and the timer retries on its own
+# schedule regardless.
+enable_security_updates() {
+  log "Installing dnf-automatic..."
+  if dnf install -y dnf-automatic; then
+    # Defaults are upgrade_type=default (every package) and
+    # apply_updates=no (download only); neither is "unattended security
+    # updates".
+    sed -i 's/^upgrade_type = .*/upgrade_type = security/' /etc/dnf/automatic.conf
+    sed -i 's/^apply_updates = .*/apply_updates = yes/' /etc/dnf/automatic.conf
+    systemctl enable --now dnf-automatic.timer
+  else
+    log "dnf-automatic install failed; continuing without unattended security updates"
+  fi
+}
+
+# config/instance/ holds every on-instance script and unit, rendered to S3
+# from build/app/instance/ by the same apply that creates this instance --
+# but the two resources have no explicit ordering, so retry rather than
+# fail outright.
+fetch_instance_files() {
+  mkdir -p /usr/local/lib/thelounge
+  _fetch_instance_files_i=0
+  while ! aws s3 cp "s3://$CONFIG_BUCKET/$CONFIG_PREFIX/instance/" \
+    /usr/local/lib/thelounge/ --recursive --region "$REGION"; do
+    _fetch_instance_files_i=$((_fetch_instance_files_i + 1))
+    log "config/instance/ not ready yet (attempt $_fetch_instance_files_i); retrying in 15s..."
+    sleep 15
+  done
+}
+
+# Scripts drop their .sh/.py suffix on install (thelounge-converge.sh ->
+# /usr/local/bin/thelounge-converge); units keep their systemd-mandated
+# .service/.timer suffix. thelounge.service is deliberately NOT enabled
+# here: it has no release to run yet, and thelounge-converge.service starts
+# it once one exists. thelounge-status.service has no such dependency (it
+# only reads whatever is on the data volume, if anything) so it's enabled
+# immediately like the watchdogs.
+install_instance_files() {
+  # basename with an explicit suffix, not shell's %-suffix parameter
+  # expansion: this file is a Terraform templatefile() template (see the
+  # readonly assignments above), which parses dollar-brace sequences as HCL
+  # interpolation wherever they appear -- including inside a shell comment,
+  # so this one avoids the syntax entirely rather than escaping it.
+  # thelounge-converge.sh (a plain, non-templated .sh) has no such
+  # constraint and uses the shorter form.
+  _install_instance_files_name=""
+  _install_instance_files_ext=""
+  for _install_instance_files_f in /usr/local/lib/thelounge/*.sh /usr/local/lib/thelounge/*.py; do
+    [ -e "$_install_instance_files_f" ] || continue
+    case "$_install_instance_files_f" in
+    *.py) _install_instance_files_ext=".py" ;;
+    *) _install_instance_files_ext=".sh" ;;
+    esac
+    _install_instance_files_name="$(basename "$_install_instance_files_f" "$_install_instance_files_ext")"
+    install -m 0755 "$_install_instance_files_f" "/usr/local/bin/$_install_instance_files_name"
+  done
+  for _install_instance_files_f in /usr/local/lib/thelounge/*.service /usr/local/lib/thelounge/*.timer; do
+    [ -e "$_install_instance_files_f" ] || continue
+    install -m 0644 "$_install_instance_files_f" "/etc/systemd/system/$(basename "$_install_instance_files_f")"
+  done
+  systemctl daemon-reload
+  systemctl enable --now \
+    thelounge-converge.timer \
+    thelounge-spot-drain.service \
+    thelounge-rightsize-watchdog.timer \
+    thelounge-health-watchdog.timer \
+    thelounge-disk-metric.timer \
+    thelounge-status.service
+}
+
+# $1 = unit name, $2 = drop-in path. The empty OnCalendar clears the shipped
+# default before setting the override.
+write_timer_dropin() {
+  log "Scheduling rightsize timer: $RIGHTSIZE_SCHEDULE"
+  mkdir -p "$(dirname "$2")"
+  cat >"$2" <<CONF
+# Written by user-data from the rightsize_schedule module input.
+[Timer]
+OnCalendar=
+OnCalendar=$RIGHTSIZE_SCHEDULE
+CONF
+  systemctl daemon-reload
+  systemctl restart "$1"
+}
+
+# thelounge-rightsize-watchdog.timer ships with a default schedule;
+# rightsize_schedule overrides it via a drop-in, keeping the unit
+# file itself env-agnostic. Two soft-fail guards, same principle as
+# enable_security_updates above: a missing unit or an invalid expression
+# keeps the shipped default rather than brick the boot.
+configure_rightsize_timer() {
+  _configure_rightsize_timer_unit="thelounge-rightsize-watchdog.timer"
+
+  if [ ! -f "/etc/systemd/system/$_configure_rightsize_timer_unit" ]; then
+    log "no $_configure_rightsize_timer_unit installed; skipping schedule override"
+    return 0
+  fi
+  if ! systemd-analyze calendar "$RIGHTSIZE_SCHEDULE" >/dev/null 2>&1; then
+    log "ERROR: invalid rightsize_schedule '$RIGHTSIZE_SCHEDULE'; keeping the shipped default"
+    return 0
+  fi
+
+  write_timer_dropin "$_configure_rightsize_timer_unit" "/etc/systemd/system/$_configure_rightsize_timer_unit.d/schedule.conf"
+}
+
+write_instance_env() {
+  # Hands every on-instance script its environment-specific wiring, keeping
+  # the scripts themselves environment-agnostic. Runs LAST: the file's
+  # existence is the "boot glue done" signal thelounge-health-watchdog and
+  # thelounge-rightsize-watchdog block on. Written via rename so nothing
+  # ever reads a partial file, and kept in /etc so it survives reboots
+  # (user-data doesn't re-run, but fstab restores the mount).
+  #
+  # Every line is `export`, not plain KEY=value: a plain assignment isn't
+  # visible to subprocesses like `aws`. AWS_USE_DUALSTACK_ENDPOINT in
+  # particular has no CLI flag -- it's read from the process environment
+  # only -- so every downstream script depends on these being exported.
+  log "Writing $INSTANCE_ENV..."
+  mkdir -p "$(dirname "$INSTANCE_ENV")"
+  cat >"$INSTANCE_ENV.tmp" <<ENV
+export REGION=$REGION
+export CONFIG_BUCKET=$CONFIG_BUCKET
+export CONFIG_PREFIX=$CONFIG_PREFIX
+export ARTIFACT_PREFIX=$ARTIFACT_PREFIX
+export DATA_ROOT=$DATA_ROOT
+export THELOUNGE_HOME=$THELOUNGE_HOME
+export PREFERRED_INSTANCE_TYPES="$PREFERRED_INSTANCE_TYPES"
+export RIGHTSIZE_MIN_UPTIME_HOURS=$RIGHTSIZE_MIN_UPTIME_HOURS
+export AWS_USE_DUALSTACK_ENDPOINT=true
+ENV
+  mv "$INSTANCE_ENV.tmp" "$INSTANCE_ENV"
+}
+
+main() {
+  log "=== user-data start: instance $INSTANCE_ID ==="
+  attach_volume
+  mount_data_volume
+  setup_swap
+  associate_eip
+  enable_security_updates
+  fetch_instance_files
+  install_instance_files
+  configure_rightsize_timer
+  write_instance_env
+  log "=== user-data complete ==="
+}
+
+main "$@"

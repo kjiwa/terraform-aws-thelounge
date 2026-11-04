@@ -1,0 +1,22 @@
+# Created by init in the root module, the child modules, and the examples. Only
+# the examples' lock files are tracked; a module's consumer owns its own.
+.terraform/
+.terraform.lock.hcl
+!examples/*/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+crash.log
+crash.*.log
+# State backups written by scripts/azmove.sh adopt, and restore drill manifests
+# written by scripts/restore.sh drill -- both carry account-scoped detail.
+azmove-state-*.json
+restore-drill-*.json
+# Packaged by archive_file at plan time.
+modules/*/desired.zip
+modules/*/lambda/*.zip
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+.claude/

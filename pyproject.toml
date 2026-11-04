@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+testpaths = [
+  "modules/edge/lambda",
+  "modules/llm-gateway/lambda",
+  "modules/status/tests",
+]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint.per-file-ignores]
+# Runs under the instance's system Python (AL2023, 3.9), which has no datetime.UTC.
+"build/app/instance/thelounge-status.py" = ["UP017"]

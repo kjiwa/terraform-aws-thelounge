@@ -1,0 +1,123 @@
+version: 0.2
+
+# Builds one thelounge bundle (Node runtime + app + plugins) for the
+# architecture named in $ARCH and publishes it to S3. Shared by both
+# thelounge-build-arm64 and thelounge-build-x86_64 (see
+# modules/app-delivery/codebuild.tf for why this is inlined here
+# rather than a delegated script, and why one project per architecture).
+# scripts/deploy.sh is unrelated: it watches this pipeline from outside and is
+# never invoked by CodeBuild.
+#
+# Required env, set by the CodeBuild project from Terraform (not module inputs
+# directly): ARCH, BUCKET, ARTIFACT_PREFIX. CODEBUILD_SRC_DIR is supplied by
+# CodeBuild itself.
+
+phases:
+  pre_build:
+    commands:
+      - |
+        set -eu
+
+        # The source artifact is desired.zip (modules/app-delivery),
+        # which CodeBuild extracts to this path.
+        DESIRED_JSON="$CODEBUILD_SRC_DIR/desired.json"
+        [ -f "$DESIRED_JSON" ] || { echo "desired.json not found in source artifact" >&2; exit 1; }
+
+        THELOUNGE_VERSION=$(jq -r '.thelounge_version' "$DESIRED_JSON")
+        NODE_VERSION=$(jq -r '.node_version' "$DESIRED_JSON")
+        PLUGINS=$(jq -r '.plugins[]' "$DESIRED_JSON" | tr '\n' ' ')
+
+        [ -n "$THELOUNGE_VERSION" ] && [ "$THELOUNGE_VERSION" != "null" ] ||
+          { echo "desired.json: thelounge_version is required" >&2; exit 1; }
+        [ -n "$NODE_VERSION" ] && [ "$NODE_VERSION" != "null" ] ||
+          { echo "desired.json: node_version is required" >&2; exit 1; }
+
+        # Node.js release filenames use their own arch name, which diverges
+        # from this project's ARCH (the AWS/CodeBuild convention) for x86_64.
+        case "$ARCH" in
+          arm64) NODE_DIST_ARCH=arm64 ;;
+          x86_64) NODE_DIST_ARCH=x64 ;;
+          *) echo "unknown ARCH: $ARCH" >&2; exit 1 ;;
+        esac
+
+        # Hand values to the build phase through a plain env file rather than
+        # relying on cross-phase shell state.
+        {
+          echo "THELOUNGE_VERSION=$THELOUNGE_VERSION"
+          echo "NODE_VERSION=$NODE_VERSION"
+          echo "NODE_DIST_ARCH=$NODE_DIST_ARCH"
+          echo "PLUGINS=$PLUGINS"
+        } >/tmp/thelounge-build.env
+  build:
+    commands:
+      - |
+        set -eu
+        # shellcheck disable=SC1091
+        . /tmp/thelounge-build.env
+
+        WORKDIR=$(mktemp -d)
+        mkdir -p "$WORKDIR/bundle/node" "$WORKDIR/bundle/app"
+        cd "$WORKDIR"
+
+        # 1. Node runtime. sha256sum -c is a supply-chain gate: a checksum
+        # mismatch means a corrupted download or a tampered mirror, and
+        # either way the build must not ship it.
+        curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_DIST_ARCH}.tar.xz"
+        curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+        grep "node-v${NODE_VERSION}-linux-${NODE_DIST_ARCH}.tar.xz$" SHASUMS256.txt >node.sha256
+        [ -s node.sha256 ] || { echo "no checksum entry for node-v${NODE_VERSION}-linux-${NODE_DIST_ARCH}.tar.xz" >&2; exit 1; }
+        sha256sum -c node.sha256
+        tar -xJf "node-v${NODE_VERSION}-linux-${NODE_DIST_ARCH}.tar.xz" -C bundle/node --strip-components=1
+
+        # Put the downloaded node ahead of the image's on PATH: npm's own
+        # shebang, and anything npm shells out to while compiling native
+        # modules (node-gyp), must resolve this node and not the image's, or
+        # the compiled ABI won't match the runtime the bundle ships.
+        PATH="$WORKDIR/bundle/node/bin:$PATH"
+        export PATH
+
+        # 2. App, installed with the just-downloaded npm so native modules
+        # (better-sqlite3) compile against the shipped node's ABI.
+        mkdir -p bundle/app
+        (cd bundle/app && npm install --omit=dev --no-audit --no-fund "thelounge@${THELOUNGE_VERSION}")
+
+        # 3. Plugins. bundle/packages IS thelounge's THELOUNGE_HOME/packages
+        # format; the instance rsyncs it into place as-is. An empty list is
+        # valid: ship with no plugins.
+        mkdir -p bundle/packages
+        printf '%s\n' '{"private":true,"description":"thelounge plugins","dependencies":{}}' >bundle/packages/package.json
+        if [ -n "$PLUGINS" ]; then
+          # Word splitting is the interface: PLUGINS is a space-separated
+          # list of npm package specifiers from desired_state.plugins.
+          # shellcheck disable=SC2086
+          (cd bundle/packages && npm install --omit=dev --no-audit --no-fund $PLUGINS)
+        fi
+
+        # Per-plugin config.json lands in the plugin's persistent storage
+        # directory (packages/<name>/), which the instance mirrors with the
+        # rest of packages/.
+        for NAME in $(jq -r '(.plugin_configs // {}) | keys[]' "$CODEBUILD_SRC_DIR/desired.json"); do
+          mkdir -p "bundle/packages/$NAME"
+          jq --arg n "$NAME" '.plugin_configs[$n]' "$CODEBUILD_SRC_DIR/desired.json" >"bundle/packages/$NAME/config.json"
+        done
+
+        # 4. Package.
+        tar -czf thelounge-bundle.tar.gz -C bundle node app packages
+        SHA=$(sha256sum thelounge-bundle.tar.gz | cut -d' ' -f1)
+
+        # 5. Publish the bundle.
+        aws s3 cp thelounge-bundle.tar.gz "s3://$BUCKET/$ARTIFACT_PREFIX/thelounge-$SHA.tar.gz"
+
+        # 6. LAST: the atomic pointer. The instance's converge timer only
+        # ever reads current-$ARCH.json, so nothing before this line is
+        # visible to the fleet -- a build that fails partway through steps
+        # 1-5 leaves the previous release live.
+        jq -n \
+          --arg artifact_key "$ARTIFACT_PREFIX/thelounge-$SHA.tar.gz" \
+          --arg sha256 "$SHA" \
+          --arg thelounge_version "$THELOUNGE_VERSION" \
+          --arg node_version "$NODE_VERSION" \
+          --arg built_at "$(date -u +%FT%TZ)" \
+          '{artifact_key: $artifact_key, sha256: $sha256, thelounge_version: $thelounge_version, node_version: $node_version, built_at: $built_at}' \
+          >"current-$ARCH.json"
+        aws s3 cp "current-$ARCH.json" "s3://$BUCKET/$ARTIFACT_PREFIX/current-$ARCH.json"

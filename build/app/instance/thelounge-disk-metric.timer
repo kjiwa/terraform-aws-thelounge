@@ -1,0 +1,12 @@
+# Publishes the disk metric hourly, starting 5 minutes after boot (the script
+# also self-gates on instance.env existing). thelounge-disk-used uses a
+# 3600 s period, so one datapoint per period is enough.
+[Unit]
+Description=Publish thelounge disk usage hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

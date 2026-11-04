@@ -1,0 +1,13 @@
+# Single disk-usage publish tick: report the larger used percentage of / and
+# the data volume to CloudWatch. Driven by thelounge-disk-metric.timer;
+# installed and enabled by user_data on first boot, kept current thereafter
+# by thelounge-converge.sh.
+[Unit]
+Description=Publish thelounge disk usage to CloudWatch
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/thelounge-disk-metric
+TimeoutStartSec=120
