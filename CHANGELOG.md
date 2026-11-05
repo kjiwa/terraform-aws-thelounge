@@ -4,6 +4,16 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-04
+
+### Fixed
+
+- The status page's Spot recovery split times a reclaim from the interruption warning instead of the outage start, which read 0 s of capacity wait on every reclaim. `modules/status` and `modules/monitoring` use terraform-aws-status-page v0.3.1.
+
+### Upgrade
+
+- `terraform init -upgrade`, then apply. The availability and status Lambdas and the status page object change; nothing is replaced.
+
 ## [1.0.2] - 2026-11-04
 
 ### Fixed
