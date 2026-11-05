@@ -43,8 +43,9 @@ test_hash_with_json_metacharacters_round_trips() {
 }
 
 test_unsafe_names_are_skipped() {
-  _out="$(converge_users '{"../escape":"h","a/b":"h","-rf":"h",".hidden":"h","ok.name-1":"h"}')"
-  assert_eq "only the safe name is created" "ok.name-1.json" "$(ls "$HOME_DIR/users")"
+  _out="$(converge_users '{"../escape":"h","a/b":"h","-rf":"h",".hidden":"h","ok.name-1":"h","user@example.org":"h","a+b@x.io":"h"}')"
+  assert_eq "only the safe names are created" "a+b@x.io.json ok.name-1.json user@example.org.json" \
+    "$(find "$HOME_DIR/users" -type f -exec basename {} \; | sort | tr '\n' ' ' | sed 's/ $//')"
   assert_eq "nothing is written outside users/" "users" "$(ls "$HOME_DIR")"
   assert_eq "restart is requested" "restart=1" "$_out"
 }

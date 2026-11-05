@@ -369,7 +369,7 @@ install_new_users() {
 
   while IFS="$(printf '\t')" read -r _install_new_users_name _install_new_users_hash; do
     [ -n "$_install_new_users_name" ] || continue
-    if ! printf '%s' "$_install_new_users_name" | LC_ALL=C grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]*$'; then
+    if ! printf '%s' "$_install_new_users_name" | LC_ALL=C grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.@+-]*$'; then
       log "Skipping user with an unsafe name."
       continue
     fi
