@@ -8,7 +8,7 @@
 # Installed by thelounge-converge.sh as /usr/local/bin/thelounge-disk-metric.
 set -eu
 
-readonly INSTANCE_ENV="/etc/thelounge/instance.env"
+readonly INSTANCE_ENV="${INSTANCE_ENV:-/etc/thelounge/instance.env}"
 readonly NAMESPACE="TheLounge"
 readonly METRIC_NAME="DiskUsedPercent"
 
@@ -22,11 +22,13 @@ main() {
   # shellcheck disable=SC1090
   . "$INSTANCE_ENV"
 
-  _main_root="$(_used_percent /)"
-  _main_data="$(_used_percent "$THELOUNGE_HOME")"
-  _main_max="$_main_root"
-  if [ "$_main_data" -gt "$_main_max" ]; then
-    _main_max="$_main_data"
+  _main_max="$(_used_percent /)"
+  # The data volume mounts during boot glue; before that only / is measured.
+  if [ -d "$THELOUNGE_HOME" ]; then
+    _main_data="$(_used_percent "$THELOUNGE_HOME")"
+    if [ "$_main_data" -gt "$_main_max" ]; then
+      _main_max="$_main_data"
+    fi
   fi
 
   aws cloudwatch put-metric-data \

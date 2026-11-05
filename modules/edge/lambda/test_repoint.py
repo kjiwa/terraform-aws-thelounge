@@ -1,4 +1,7 @@
 import copy
+import datetime
+import pathlib
+import re
 
 import pytest
 
@@ -50,6 +53,9 @@ class FakeCloudFront:
             "CannotDeleteEntityWhileInUse", (Exception,), {}
         )
         IllegalDelete = type("IllegalDelete", (Exception,), {})
+        EntityNotFound = type("EntityNotFound", (Exception,), {})
+        InvalidIfMatchVersion = type("InvalidIfMatchVersion", (Exception,), {})
+        PreconditionFailed = type("PreconditionFailed", (Exception,), {})
 
     def __init__(self, chat_id, status_id, arn, instance=INSTANCE):
         self.config = {
@@ -71,6 +77,8 @@ class FakeCloudFront:
             )
         }
         self.updates = 0
+        self.modified = {}
+        self.vanished = set()
 
     def get_distribution_config(self, Id):
         return {"DistributionConfig": copy.deepcopy(self.config), "ETag": "e"}
@@ -83,6 +91,8 @@ class FakeCloudFront:
         return {"Distribution": {"Status": "Deployed"}}
 
     def get_vpc_origin(self, Id):
+        if Id in self.vanished:
+            raise self.exceptions.EntityNotFound()
         o = self.origins[Id]
         return {
             "ETag": "e",
@@ -102,7 +112,15 @@ class FakeCloudFront:
         return {"VpcOrigin": {"Id": vid}}
 
     def list_vpc_origins(self, **kwargs):
-        items = [{"Id": vid, "Name": o["Name"]} for vid, o in self.origins.items()]
+        long_ago = datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
+        items = [
+            {
+                "Id": vid,
+                "Name": o["Name"],
+                "LastModifiedTime": self.modified.get(vid, long_ago),
+            }
+            for vid, o in self.origins.items()
+        ]
         return {"VpcOriginList": {"Items": items}}
 
     def delete_vpc_origin(self, Id, IfMatch):
@@ -159,3 +177,77 @@ def test_unchanged_path_skips_matching_parameters(monkeypatch, repoint):
     repoint.handler({}, None)
 
     assert ssm.puts == []
+
+
+def leaked_origin(cloudfront, vid, modified=None):
+    cloudfront.origins[vid] = {
+        "Name": "thelounge-i-0leak",
+        "Arn": ARN,
+        "Status": "Deployed",
+    }
+    if modified is not None:
+        cloudfront.modified[vid] = modified
+
+
+def test_sweep_deletes_an_old_unreferenced_origin(monkeypatch, repoint):
+    cloudfront = FakeCloudFront("vo_chat", "vo_status", ARN)
+    leaked_origin(cloudfront, "vo_leak")
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+
+    repoint.handler({}, None)
+
+    assert "vo_leak" not in cloudfront.origins
+
+
+def test_sweep_spares_an_origin_a_concurrent_run_may_still_attach(monkeypatch, repoint):
+    cloudfront = FakeCloudFront("vo_chat", "vo_status", ARN)
+    just_now = datetime.datetime.now(datetime.UTC)
+    leaked_origin(cloudfront, "vo_fresh", modified=just_now)
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+
+    repoint.handler({}, None)
+
+    assert "vo_fresh" in cloudfront.origins
+
+
+@pytest.mark.parametrize("error", ["EntityNotFound", "InvalidIfMatchVersion"])
+def test_sweep_tolerates_an_origin_deleted_underneath_it(monkeypatch, repoint, error):
+    cloudfront = FakeCloudFront("vo_chat", "vo_status", ARN)
+    leaked_origin(cloudfront, "vo_gone")
+    leaked_origin(cloudfront, "vo_other")
+    raised = getattr(cloudfront.exceptions, error)
+
+    def racing_delete(Id, IfMatch):
+        if Id == "vo_gone":
+            raise raised()
+        del cloudfront.origins[Id]
+
+    cloudfront.delete_vpc_origin = racing_delete
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+
+    repoint.handler({}, None)
+
+    assert "vo_other" not in cloudfront.origins
+
+
+def test_sweep_tolerates_an_origin_that_vanishes_before_its_etag_read(
+    monkeypatch, repoint
+):
+    cloudfront = FakeCloudFront("vo_chat", "vo_status", ARN)
+    leaked_origin(cloudfront, "vo_gone")
+    cloudfront.vanished.add("vo_gone")
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+
+    repoint.handler({}, None)
+
+
+def test_worst_case_waits_fit_in_the_lambda_timeout(repoint):
+    tf = pathlib.Path(__file__).parent.parent.joinpath("repoint_lambda.tf").read_text()
+    timeout = int(re.search(r"^\s*timeout\s*=\s*(\d+)", tf, re.MULTILINE).group(1))
+
+    worst_case = (
+        2 * repoint.VPC_ORIGIN_DEPLOY_BUDGET_SECONDS
+        + repoint.DISTRIBUTION_DEPLOY_BUDGET_SECONDS
+    )
+
+    assert worst_case < timeout
