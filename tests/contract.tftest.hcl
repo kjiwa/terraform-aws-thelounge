@@ -337,7 +337,7 @@ run "users_plan_without_printing_their_hashes" {
     aws.us_east_1 = aws.us_east_1
   }
   variables {
-    thelounge_users = { alice = "hash-of-the-password" }
+    thelounge_users = { "alice@example.org" = "hash-of-the-password" }
   }
   assert {
     condition     = issensitive(var.thelounge_users)

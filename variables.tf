@@ -126,8 +126,8 @@ variable "thelounge_users" {
   sensitive   = true
 
   validation {
-    condition     = alltrue([for name in nonsensitive(keys(var.thelounge_users)) : can(regex("^[A-Za-z0-9_][A-Za-z0-9_.-]*$", name))])
-    error_message = "Usernames must start with a letter, digit or underscore and contain only letters, digits, underscores, dots and hyphens, because each becomes a file name on the instance."
+    condition     = alltrue([for name in nonsensitive(keys(var.thelounge_users)) : can(regex("^[A-Za-z0-9_][A-Za-z0-9_.@+-]*$", name))])
+    error_message = "Usernames must start with a letter, digit or underscore and contain only letters, digits, underscores, dots, at signs, plus signs and hyphens, because each becomes a file name on the instance."
   }
 }
 

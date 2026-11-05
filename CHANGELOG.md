@@ -4,6 +4,12 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-04
+
+### Fixed
+
+- Usernames may contain `@` and `+`, so an email address works as a username. 1.0.1 rejected them.
+
 ## [1.0.1] - 2026-11-04
 
 ### Changed
