@@ -4,6 +4,21 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-04
+
+### Changed
+
+- `thelounge_users` is sensitive, so plans no longer print password hashes, and its keys are validated: a username must start with a letter, digit or underscore and contain only letters, digits, underscores, dots and hyphens. The converge script skips any other name.
+
+### Fixed
+
+- Converge extracts a release into a staging directory and renames it into place, and repoints `current` with a rename, so a failed extraction or an interrupted tick never leaves a partial or missing release.
+- A release that was activated but not started (the tick failed before the restart) is restarted on the next tick instead of being treated as running. The instance records the last started release in `/opt/thelounge/applied.sha`.
+- Pruning keeps the release `current` points at, not the newest by modification time, so a rollback to a retained release is not pruned.
+- Converge builds each user file with `jq` instead of `printf`, so a hash containing quotes or backslashes cannot corrupt it.
+- The disk metric no longer aborts before the data volume is mounted; it reports `/` alone until then.
+- The CloudFront repoint Lambda leaves an unreferenced VPC origin alone for 15 minutes so a concurrent run can still attach it, tolerates an origin deleted underneath it, and keeps its worst-case waits (2 x 300 s for the two VPC origins, 240 s for the distribution) inside its 870 s timeout.
+
 ## [1.0.0] - 2026-11-04
 
 ### Added

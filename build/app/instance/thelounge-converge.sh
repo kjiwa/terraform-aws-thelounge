@@ -17,11 +17,14 @@ set -eu
 
 readonly INSTANCE_ENV="/etc/thelounge/instance.env"
 readonly LOCK_FILE="/run/thelounge-converge.lock"
-readonly LIB_DIR="/usr/local/lib/thelounge"
+# LIB_DIR, RELEASES_DIR, CURRENT_LINK and APPLIED_FILE are overridable so the
+# tests can run against a scratch tree.
+readonly LIB_DIR="${LIB_DIR:-/usr/local/lib/thelounge}"
 readonly BIN_DIR="/usr/local/bin"
 readonly UNIT_DIR="/etc/systemd/system"
-readonly RELEASES_DIR="/opt/thelounge/releases"
-readonly CURRENT_LINK="/opt/thelounge/current"
+readonly RELEASES_DIR="${RELEASES_DIR:-/opt/thelounge/releases}"
+readonly CURRENT_LINK="${CURRENT_LINK:-/opt/thelounge/current}"
+readonly APPLIED_FILE="${APPLIED_FILE:-/opt/thelounge/applied.sha}"
 readonly KEEP_RELEASES=2
 readonly THELOUNGE_USER="thelounge"
 readonly DEPLOYED_PREFIX="deployed"
@@ -185,18 +188,54 @@ resolve_arch() {
   esac
 }
 
-# Keeps only the newest KEEP_RELEASES. The current release is always the
-# newest (just extracted), so it's never pruned.
+# Keeps the current release plus the newest others, KEEP_RELEASES in all, and
+# drops staging directories a crashed tick left behind. The current release is
+# excluded by what the link points at, not by age: after a rollback to a
+# retained release it is the oldest.
 prune_releases() {
-  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' |
+  _prune_releases_current="$(readlink -f "$CURRENT_LINK")"
+  rm -rf "$RELEASES_DIR"/.incoming-*
+  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -name "$(basename "$_prune_releases_current")" \
+    -printf '%T@ %p\n' |
     sort -rn |
-    tail -n "+$((KEEP_RELEASES + 1))" |
+    tail -n "+$KEEP_RELEASES" |
     cut -d' ' -f2- |
     while IFS= read -r old; do
       [ -n "$old" ] || continue
       log "Pruning old release $old"
       rm -rf "$old"
     done
+}
+
+# Extracts the tarball into a staging directory and renames it into place, so
+# a failed extraction never leaves a partial release under its final name.
+# Each step returns explicitly: the caller tests the result, which suspends
+# `set -e` inside the function.
+install_release() {
+  _install_release_dir="$RELEASES_DIR/$2"
+  _install_release_staging="$RELEASES_DIR/.incoming-$2"
+  rm -rf "$_install_release_staging"
+  mkdir -p "$_install_release_staging" || return 1
+  tar -xzf "$1" -C "$_install_release_staging" || return 1
+  echo "$2" >"$_install_release_staging/.sha" || return 1
+  rm -rf "$_install_release_dir"
+  mv "$_install_release_staging" "$_install_release_dir"
+}
+
+# Repoints CURRENT_LINK with a rename, which replaces the link atomically; an
+# in-place `ln -sfn` unlinks first and leaves a window with no current release.
+activate_release() {
+  rm -f "$CURRENT_LINK.new"
+  ln -s "$1" "$CURRENT_LINK.new"
+  mv -T "$CURRENT_LINK.new" "$CURRENT_LINK"
+}
+
+# Records the sha the running service was last started on. A release that is
+# activated but not recorded here (the tick failed before the restart) is
+# restarted on the next tick instead of being mistaken for already running.
+mark_applied() {
+  [ -f "$CURRENT_LINK/.sha" ] || return 0
+  cp "$CURRENT_LINK/.sha" "$APPLIED_FILE"
 }
 
 # current-$ARCH.json (written by the delivery pipeline's CodeBuild project)
@@ -221,12 +260,20 @@ sync_release() {
   RELEASE_POINTER="$_sync_release_pointer_json"
   RELEASE_ARCH="$_sync_release_arch"
 
+  # An instance that predates the marker records the release it is running
+  # before this tick can activate another.
+  [ -f "$APPLIED_FILE" ] || mark_applied
   _sync_release_current_sha=""
   if [ -f "$CURRENT_LINK/.sha" ]; then
     _sync_release_current_sha="$(cat "$CURRENT_LINK/.sha")"
   fi
   if [ "$_sync_release_sha" = "$_sync_release_current_sha" ]; then
     log "Release $_sync_release_sha already current."
+    if [ -f "$APPLIED_FILE" ] && [ "$(cat "$APPLIED_FILE")" != "$_sync_release_sha" ]; then
+      log "Release $_sync_release_sha was activated but never started; restarting."
+      RESTART_NEEDED=1
+      RELEASE_CHANGED=1
+    fi
     return 0
   fi
 
@@ -245,13 +292,16 @@ sync_release() {
     exit 1
   fi
 
-  _sync_release_release_dir="$RELEASES_DIR/$_sync_release_sha"
-  mkdir -p "$_sync_release_release_dir"
-  tar -xzf "$_sync_release_tmp_tar" -C "$_sync_release_release_dir"
+  mkdir -p "$RELEASES_DIR"
+  if ! install_release "$_sync_release_tmp_tar" "$_sync_release_sha"; then
+    log "ERROR: could not extract $_sync_release_artifact_key."
+    rm -rf "$RELEASES_DIR"/.incoming-*
+    rm -f "$_sync_release_tmp_tar"
+    exit 1
+  fi
   rm -f "$_sync_release_tmp_tar"
-  echo "$_sync_release_sha" >"$_sync_release_release_dir/.sha"
 
-  ln -sfn "$_sync_release_release_dir" "$CURRENT_LINK"
+  activate_release "$RELEASES_DIR/$_sync_release_sha"
   log "Release $_sync_release_sha is now current."
   prune_releases
   RESTART_NEEDED=1
@@ -303,7 +353,8 @@ install_config_js() {
 
 # One file per user, created only if absent: an existing file has
 # accumulated that user's IRC networks and preferences and is never
-# overwritten from users.json after the first login.
+# overwritten from users.json after the first login. A name becomes a file
+# name, so only a plain one is accepted.
 install_new_users() {
   _install_new_users_target=""
   [ -f "$LIB_DIR/users.json" ] || return 0
@@ -313,15 +364,20 @@ install_new_users() {
   # Staged to a file rather than piped into `while read`: a pipe would run
   # the loop in a subshell (POSIX semantics) and lose RESTART_NEEDED=1 set
   # inside it.
-  _install_new_users_tmp_list="$(mktemp)"
+  _install_new_users_tmp_list="$(mktemp "${TMPDIR:-/tmp}/thelounge-users.XXXXXX")"
   jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$LIB_DIR/users.json" >"$_install_new_users_tmp_list"
 
   while IFS="$(printf '\t')" read -r _install_new_users_name _install_new_users_hash; do
     [ -n "$_install_new_users_name" ] || continue
+    if ! printf '%s' "$_install_new_users_name" | LC_ALL=C grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]*$'; then
+      log "Skipping user with an unsafe name."
+      continue
+    fi
     _install_new_users_target="$_install_new_users_users_dir/$_install_new_users_name.json"
     [ -e "$_install_new_users_target" ] && continue
     log "Creating user $_install_new_users_name"
-    printf '{"password": "%s", "log": true}\n' "$_install_new_users_hash" >"$_install_new_users_target"
+    jq -n --arg password "$_install_new_users_hash" '{password: $password, log: true}' \
+      >"$_install_new_users_target"
     chmod 0600 "$_install_new_users_target"
     RESTART_NEEDED=1
   done <"$_install_new_users_tmp_list"
@@ -430,6 +486,7 @@ main() {
     log "No changes; thelounge.service already running."
   fi
 
+  mark_applied
   ack_release
 }
 

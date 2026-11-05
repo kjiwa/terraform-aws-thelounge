@@ -123,6 +123,12 @@ variable "thelounge_users" {
   description = "Users to create, as username => bcrypt password hash (generate with `thelounge hash`, not the plaintext password). The converge script creates a user only if not already present, so existing users' networks/preferences are never overwritten. Treat the values as sensitive -- they authenticate access to this deployment."
   type        = map(string)
   default     = {}
+  sensitive   = true
+
+  validation {
+    condition     = alltrue([for name in nonsensitive(keys(var.thelounge_users)) : can(regex("^[A-Za-z0-9_][A-Za-z0-9_.-]*$", name))])
+    error_message = "Usernames must start with a letter, digit or underscore and contain only letters, digits, underscores, dots and hyphens, because each becomes a file name on the instance."
+  }
 }
 
 variable "data_volume_size_gb" {

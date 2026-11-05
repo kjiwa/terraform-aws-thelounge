@@ -329,3 +329,30 @@ run "rejects_status_bedrock_without_catchup" {
   }
   expect_failures = [var.status]
 }
+
+run "users_plan_without_printing_their_hashes" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_users = { alice = "hash-of-the-password" }
+  }
+  assert {
+    condition     = issensitive(var.thelounge_users)
+    error_message = "thelounge_users carries password hashes and must be sensitive."
+  }
+}
+
+run "rejects_a_username_that_is_not_a_safe_file_name" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_users = { "../escape" = "hash-of-the-password" }
+  }
+  expect_failures = [var.thelounge_users]
+}

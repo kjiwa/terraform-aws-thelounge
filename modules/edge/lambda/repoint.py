@@ -72,6 +72,7 @@ see ROLES) are swept. Terraform's two tracked VPC origins only seed the SSM
 parameters, then sit unreferenced and free after each origin's first repoint.
 """
 
+import datetime
 import json
 import os
 import time
@@ -84,12 +85,19 @@ DISTRIBUTION_ID = os.environ["DISTRIBUTION_ID"]
 
 # CloudFront's own deploy times dominate here (a VPC origin took ~2 minutes
 # to reach Deployed in practice; AWS documents 15 minutes as the worst
-# case). Sized to fit inside the Lambda's configured timeout with room to
-# spare -- see repoint_lambda.tf. A run that exceeds its budget raises and
-# is simply retried whole on the next scheduled tick.
-VPC_ORIGIN_DEPLOY_BUDGET_SECONDS = 500
-DISTRIBUTION_DEPLOY_BUDGET_SECONDS = 300
+# case). Both roles' VPC origin waits plus the distribution wait run
+# sequentially and must sum to less than the Lambda's timeout
+# (repoint_lambda.tf; test_repoint.py asserts it). A run that exceeds its
+# budget gives up and the next scheduled tick resumes from the origin it
+# created, found by name.
+VPC_ORIGIN_DEPLOY_BUDGET_SECONDS = 300
+DISTRIBUTION_DEPLOY_BUDGET_SECONDS = 240
 POLL_INTERVAL_SECONDS = 5
+
+# An unreferenced origin younger than this may belong to a concurrent run
+# that has not attached it yet, so the sweep leaves it alone. Exceeds the
+# Lambda's timeout, the longest a run can hold one.
+SWEEP_GRACE_SECONDS = 900
 
 # See the module docstring's "Two origins, one instance" section. 20 leaves
 # five slots of headroom under the 25-per-account quota for the
@@ -188,7 +196,8 @@ def _sweep_leaked_origins(keep_vpc_origin_ids):
 
     Called from every path through handler(), not just after a repoint: a
     delete attempt can lose to CannotDeleteEntityWhileInUse (the origin was
-    still Deploying) or IllegalDelete (observed in production: overlapping
+    still Deploying), EntityNotFound, InvalidIfMatchVersion or
+    PreconditionFailed (a concurrent sweep got there first), or IllegalDelete (observed in production: overlapping
     invocations racing the same origin -- one invocation's delete moves it
     out of a deletable state before a second, concurrent invocation's own
     delete attempt on the same id reaches CloudFront; two origins per
@@ -199,12 +208,15 @@ def _sweep_leaked_origins(keep_vpc_origin_ids):
     what makes cleanup eventually consistent.
     """
     kwargs = {}
+    now = datetime.datetime.now(datetime.UTC)
     while True:
         page = cloudfront.list_vpc_origins(**kwargs)
         for item in page["VpcOriginList"]["Items"]:
             if item["Id"] in keep_vpc_origin_ids or not item["Name"].startswith(
                 "thelounge-i-"
             ):
+                continue
+            if (now - item["LastModifiedTime"]).total_seconds() < SWEEP_GRACE_SECONDS:
                 continue
             try:
                 etag = cloudfront.get_vpc_origin(Id=item["Id"])["ETag"]
@@ -217,6 +229,9 @@ def _sweep_leaked_origins(keep_vpc_origin_ids):
             except (
                 cloudfront.exceptions.CannotDeleteEntityWhileInUse,
                 cloudfront.exceptions.IllegalDelete,
+                cloudfront.exceptions.EntityNotFound,
+                cloudfront.exceptions.InvalidIfMatchVersion,
+                cloudfront.exceptions.PreconditionFailed,
             ):
                 pass
         if not page["VpcOriginList"].get("IsTruncated"):
