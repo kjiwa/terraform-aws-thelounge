@@ -30,7 +30,7 @@ drain() {
   log "Spot interruption notice received; stopping thelounge..."
   # Before the stop, so a converge tick that sees the unit stopped does not
   # start it again.
-  : >"$DRAIN_MARKER"
+  : >"$DRAIN_MARKER" || log "could not write $DRAIN_MARKER; stopping anyway"
   systemctl stop thelounge || log "systemctl stop failed; syncing anyway"
   sync
   log "Drain complete."

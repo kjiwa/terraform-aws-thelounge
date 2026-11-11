@@ -376,6 +376,9 @@ def handler(event, context):
         return
     instance_id = instance["InstanceId"]
     private_dns = instance["PrivateDnsName"]
+    if not private_dns:
+        print(json.dumps({"action": "no-private-dns", "instance_id": instance_id}))
+        return
 
     new_arn = f"arn:aws:ec2:{REGION}:{ACCOUNT_ID}:instance/{instance_id}"
 
@@ -423,16 +426,17 @@ def handler(event, context):
     fresh = cloudfront.get_distribution_config(Id=DISTRIBUTION_ID)
     fresh_config = fresh["DistributionConfig"]
     for role in ROLES:
-        vpc_origin_id = resolved[role["role"]]
-        if vpc_origin_id is None:
-            continue
         fresh_origin = _origin_by_id(fresh_config, role["origin_id"])
-        if fresh_origin is not None:
+        if fresh_origin is None:
+            continue
+        # Not used for routing, but Terraform manages it from the instance's
+        # private DNS name; leaving it stale makes every replacement a plan
+        # diff. Written for every role so a skipped role cannot keep the fast
+        # path from applying.
+        fresh_origin["DomainName"] = private_dns
+        vpc_origin_id = resolved[role["role"]]
+        if vpc_origin_id is not None:
             fresh_origin["VpcOriginConfig"]["VpcOriginId"] = vpc_origin_id
-            # Not used for routing, but Terraform manages it from the
-            # instance's private DNS name; leaving it stale makes every
-            # replacement a plan diff.
-            fresh_origin["DomainName"] = private_dns
 
     cloudfront.update_distribution(
         Id=DISTRIBUTION_ID, IfMatch=fresh["ETag"], DistributionConfig=fresh_config

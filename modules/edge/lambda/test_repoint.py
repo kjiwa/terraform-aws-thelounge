@@ -283,3 +283,20 @@ def test_worst_case_waits_fit_in_the_lambda_timeout(repoint):
     )
 
     assert worst_case < timeout
+
+
+def test_instance_without_a_private_dns_name_writes_nothing(monkeypatch, repoint):
+    cloudfront = FakeCloudFront(
+        "vo_chat", "vo_status", ARN, domain="ip-10-20-0-198.ec2.internal"
+    )
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+    monkeypatch.setattr(
+        repoint,
+        "_running_instance",
+        lambda: {"InstanceId": INSTANCE, "PrivateDnsName": ""},
+    )
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 0
+    assert origin_domains(cloudfront) == ["ip-10-20-0-198.ec2.internal"] * 2

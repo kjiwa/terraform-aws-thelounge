@@ -33,6 +33,11 @@ reset() {
   rm -rf "$STUB" "$MARKER"
   mkdir -p "$STUB"
   : >"$STUB/calls"
+  : >"$STUB/records"
+}
+
+records() {
+  tr '\n' ',' <"$STUB/records" | sed 's/,$//'
 }
 
 # converge STEPS: runs main with every step stubbed to a no-op except for the
@@ -52,8 +57,8 @@ converge() {
       fetch_desired_config() { :; }
       sync_release() { :; }
       converge_data() { :; }
-      mark_applied() { :; }
-      ack_release() { :; }
+      mark_applied() { echo mark >>'$STUB/records'; }
+      ack_release() { echo ack >>'$STUB/records'; }
       $1
       main" >/dev/null 2>&1 || true
   grep -v '^is-active' "$STUB/calls" | tr '\n' ',' | sed 's/,$//'
@@ -85,10 +90,21 @@ test_marker_created_mid_run_blocks_restart_and_start() {
   assert_eq "no start" "" "$(converge "converge_data() { : >'$MARKER'; }")"
 }
 
+test_a_drained_tick_does_not_record_or_acknowledge_the_release() {
+  reset
+  : >"$MARKER"
+  converge 'RESTART_NEEDED=1' >/dev/null
+  assert_eq "no mark or ack when drained" "" "$(records)"
+  reset
+  converge ':' >/dev/null
+  assert_eq "mark and ack otherwise" "mark,ack" "$(records)"
+}
+
 main() {
   test_without_a_marker_converge_restarts_and_starts
   test_marker_present_at_start_blocks_restart_and_start
   test_marker_created_mid_run_blocks_restart_and_start
+  test_a_drained_tick_does_not_record_or_acknowledge_the_release
   finish
 }
 
