@@ -12,6 +12,7 @@ ENV = {
     "AWS_DEFAULT_REGION": "us-east-1",
 }
 INSTANCE = "i-0abc"
+DNS = "ip-10-20-0-79.ec2.internal"
 ARN = f"arn:aws:ec2:us-east-1:123456789012:instance/{INSTANCE}"
 
 
@@ -57,13 +58,18 @@ class FakeCloudFront:
         InvalidIfMatchVersion = type("InvalidIfMatchVersion", (Exception,), {})
         PreconditionFailed = type("PreconditionFailed", (Exception,), {})
 
-    def __init__(self, chat_id, status_id, arn, instance=INSTANCE):
+    def __init__(self, chat_id, status_id, arn, instance=INSTANCE, domain=DNS):
         self.config = {
             "Origins": {
                 "Items": [
-                    {"Id": "thelounge", "VpcOriginConfig": {"VpcOriginId": chat_id}},
+                    {
+                        "Id": "thelounge",
+                        "DomainName": domain,
+                        "VpcOriginConfig": {"VpcOriginId": chat_id},
+                    },
                     {
                         "Id": "thelounge-status",
+                        "DomainName": domain,
                         "VpcOriginConfig": {"VpcOriginId": status_id},
                     },
                 ]
@@ -130,7 +136,11 @@ class FakeCloudFront:
 def install(monkeypatch, repoint, cloudfront, ssm):
     monkeypatch.setattr(repoint, "cloudfront", cloudfront)
     monkeypatch.setattr(repoint, "ssm", ssm)
-    monkeypatch.setattr(repoint, "_running_instance_id", lambda: INSTANCE)
+    monkeypatch.setattr(
+        repoint,
+        "_running_instance",
+        lambda: {"InstanceId": INSTANCE, "PrivateDnsName": DNS},
+    )
 
 
 CHAT = "/thelounge/edge/vpc-origin/chat"
@@ -143,6 +153,7 @@ def test_publishes_new_ids_after_repoint(monkeypatch, repoint):
         "vo_old_status",
         "arn:aws:ec2:us-east-1:123456789012:instance/i-0old",
         instance="i-0old",
+        domain="ip-10-20-0-198.ec2.internal",
     )
     ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
     install(monkeypatch, repoint, cloudfront, ssm)
@@ -154,6 +165,27 @@ def test_publishes_new_ids_after_repoint(monkeypatch, repoint):
         CHAT: "vo_new_thelounge-i-0abc",
         STATUS: "vo_new_thelounge-i-0abc-status",
     }
+    assert origin_domains(cloudfront) == [DNS, DNS]
+
+
+def origin_domains(cloudfront):
+    return [o["DomainName"] for o in cloudfront.config["Origins"]["Items"]]
+
+
+def test_fast_path_rewrites_a_stale_domain_name(monkeypatch, repoint):
+    cloudfront = FakeCloudFront(
+        "vo_chat", "vo_status", ARN, domain="ip-10-20-0-198.ec2.internal"
+    )
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 1
+    assert origin_domains(cloudfront) == [DNS, DNS]
+    assert [
+        o["VpcOriginConfig"]["VpcOriginId"]
+        for o in cloudfront.config["Origins"]["Items"]
+    ] == ["vo_chat", "vo_status"]
 
 
 def test_unchanged_path_syncs_differing_and_skips_missing_parameters(
@@ -251,3 +283,20 @@ def test_worst_case_waits_fit_in_the_lambda_timeout(repoint):
     )
 
     assert worst_case < timeout
+
+
+def test_instance_without_a_private_dns_name_writes_nothing(monkeypatch, repoint):
+    cloudfront = FakeCloudFront(
+        "vo_chat", "vo_status", ARN, domain="ip-10-20-0-198.ec2.internal"
+    )
+    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+    monkeypatch.setattr(
+        repoint,
+        "_running_instance",
+        lambda: {"InstanceId": INSTANCE, "PrivateDnsName": ""},
+    )
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 0
+    assert origin_domains(cloudfront) == ["ip-10-20-0-198.ec2.internal"] * 2

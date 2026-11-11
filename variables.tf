@@ -110,13 +110,18 @@ variable "thelounge_plugins" {
 variable "node_version" {
   description = "Node.js version the app-delivery pipeline's build environment uses to install and run The Lounge."
   type        = string
-  default     = "22.17.0"
+  default     = "22.23.5"
 }
 
 variable "thelounge_config" {
-  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port) and rendered to the delivery bucket."
+  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port), which it may not override. Rendered to the delivery bucket."
   type        = any
   default     = {}
+
+  validation {
+    condition     = var.thelounge_config == null || length(setintersection(keys(var.thelounge_config), ["public", "reverseProxy", "host", "port"])) == 0
+    error_message = "thelounge_config must not set public, reverseProxy, host or port: this stack pins them because the security group, VPC origin and user_data depend on their values."
+  }
 }
 
 variable "thelounge_users" {
@@ -208,7 +213,7 @@ variable "disk_alarm_used_percent" {
 }
 
 variable "enable_public_ipv4" {
-  description = "Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead."
+  description = "Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. The CloudFront-to-EIP hop is plain HTTP (origin_protocol_policy http-only), so it crosses the public internet unencrypted. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead."
   type        = bool
   default     = false
 }

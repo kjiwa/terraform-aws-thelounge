@@ -37,7 +37,7 @@ In `<backup-root>`, a root with its own AWS provider for the backup account (pin
 
 ```hcl
 module "state" {
-  source      = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/state-bucket?ref=v0.2.0"
+  source      = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/state-bucket?ref=v0.2.1"
   bucket_name = "<state-bucket>"
 }
 ```
@@ -64,7 +64,7 @@ Add keel's `backup-vault-account` module to `<backup-root>`:
 
 ```hcl
 module "backup_vault" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/backup-vault-account?ref=v0.2.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/backup-vault-account?ref=v0.2.1"
 
   name_prefix                   = "thelounge"
   vault_name                    = "thelounge-backup"

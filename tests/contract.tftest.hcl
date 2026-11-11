@@ -330,6 +330,54 @@ run "rejects_status_bedrock_without_catchup" {
   expect_failures = [var.status]
 }
 
+run "rejects_pinned_config_key_port" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_config = { port = 9001 }
+  }
+  expect_failures = [var.thelounge_config]
+}
+
+run "rejects_pinned_config_key_host" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_config = { host = "0.0.0.0" }
+  }
+  expect_failures = [var.thelounge_config]
+}
+
+run "rejects_pinned_config_key_public" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_config = { public = true }
+  }
+  expect_failures = [var.thelounge_config]
+}
+
+run "rejects_pinned_config_key_reverseProxy" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_config = { reverseProxy = false }
+  }
+  expect_failures = [var.thelounge_config]
+}
+
 run "users_plan_without_printing_their_hashes" {
   command = plan
   providers = {

@@ -37,14 +37,33 @@ data "aws_iam_policy_document" "build" {
 
   # CodePipeline's own artifact store (main.tf's prefix layout), NOT scoped
   # to local.name_env: CodePipeline truncates the pipeline name to an
-  # undocumented fixed length when building this prefix, so scoping to the
-  # guessed untruncated name silently denies every build. Wildcarding the
-  # bucket here is redundant with, not weaker than, the statements above.
+  # undocumented fixed length when building this prefix, so the wildcard
+  # stays and cannot be narrowed to a prefix. The Deny below closes what the
+  # wildcard would otherwise grant: writing the prefixes the instance trusts
+  # (converge installs config/ as root) and reading config/users.json.
   statement {
     sid       = "ReadWritePipelineArtifactStore"
     effect    = "Allow"
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.this.arn}/*"]
+  }
+
+  statement {
+    sid     = "DenyWriteTrustedPrefixes"
+    effect  = "Deny"
+    actions = ["s3:PutObject"]
+    resources = [
+      "${aws_s3_bucket.this.arn}/${local.config_prefix}/*",
+      "${aws_s3_bucket.this.arn}/${local.desired_prefix}/*",
+      "${aws_s3_bucket.this.arn}/deployed/*",
+    ]
+  }
+
+  statement {
+    sid       = "DenyReadConfig"
+    effect    = "Deny"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.this.arn}/${local.config_prefix}/*"]
   }
 
   statement {

@@ -1,3 +1,5 @@
+data "aws_partition" "current" {}
+
 data "archive_file" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 
@@ -15,6 +17,7 @@ resource "aws_lambda_function" "repoint" {
   handler          = "repoint.handler"
   filename         = data.archive_file.repoint[0].output_path
   source_code_hash = data.archive_file.repoint[0].output_base64sha256
+  architectures    = ["arm64"]
   memory_size      = 128
   # Dominated by CloudFront's own deploy times (create-VPC-origin then
   # update-distribution) -- see the budget constants in lambda/repoint.py,
@@ -60,7 +63,7 @@ resource "aws_cloudwatch_log_group" "repoint" {
 
 # Reconcile on a schedule rather than react to a launch event: see the
 # module docstring in lambda/repoint.py for why. Mirrors the availability
-# module's canary schedule (monitoring/lambda.tf).
+# module's canary schedule (modules/availability/lambda.tf in terraform-aws-status-page).
 resource "aws_cloudwatch_event_rule" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 
@@ -121,18 +124,19 @@ resource "aws_iam_role" "repoint" {
 data "aws_iam_policy_document" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 
-  # Resource: "*" -- this action family doesn't support resource-level
-  # scoping, and the account holds one distribution/origin at a time, so
-  # "*" grants nothing broader in practice.
+  # Per the AWS service authorization reference, Get/DeleteVpcOrigin take a
+  # vpcorigin/<id> resource while Create/ListVpcOrigins take none.
   statement {
-    sid    = "ManageVpcOrigins"
-    effect = "Allow"
-    actions = [
-      "cloudfront:GetVpcOrigin",
-      "cloudfront:ListVpcOrigins",
-      "cloudfront:CreateVpcOrigin",
-      "cloudfront:DeleteVpcOrigin",
-    ]
+    sid       = "ManageVpcOrigins"
+    effect    = "Allow"
+    actions   = ["cloudfront:GetVpcOrigin", "cloudfront:DeleteVpcOrigin"]
+    resources = ["arn:${data.aws_partition.current.partition}:cloudfront::${data.aws_caller_identity.current.account_id}:vpcorigin/*"]
+  }
+
+  statement {
+    sid       = "CreateAndListVpcOrigins"
+    effect    = "Allow"
+    actions   = ["cloudfront:CreateVpcOrigin", "cloudfront:ListVpcOrigins"]
     resources = ["*"]
   }
 
@@ -140,7 +144,7 @@ data "aws_iam_policy_document" "repoint" {
     sid       = "RepointDistribution"
     effect    = "Allow"
     actions   = ["cloudfront:GetDistribution", "cloudfront:GetDistributionConfig", "cloudfront:UpdateDistribution"]
-    resources = ["*"]
+    resources = [aws_cloudfront_distribution.this.arn]
   }
 
   # CreateVpcOrigin authorizes the caller against the origin's target as well

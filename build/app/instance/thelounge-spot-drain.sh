@@ -14,6 +14,7 @@ set -eu
 
 readonly IMDS="http://169.254.169.254/latest"
 readonly POLL_SECONDS=5
+readonly DRAIN_MARKER="/run/thelounge-drained"
 
 log() {
   # stdout lands in the journal via the unit.
@@ -27,6 +28,9 @@ imds_token() {
 
 drain() {
   log "Spot interruption notice received; stopping thelounge..."
+  # Before the stop, so a converge tick that sees the unit stopped does not
+  # start it again.
+  : >"$DRAIN_MARKER" || log "could not write $DRAIN_MARKER; stopping anyway"
   systemctl stop thelounge || log "systemctl stop failed; syncing anyway"
   sync
   log "Drain complete."

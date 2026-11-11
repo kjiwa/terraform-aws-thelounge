@@ -36,8 +36,9 @@ locals {
   #     CodePipeline prefixes its S3 artifact keys with the pipeline name
   #     (not configurable) but truncates it to a fixed length (observed:
   #     "thelounge-delivery-prod" -> "thelounge-delivery-p", 20 chars,
-  #     undocumented) -- so the build role's IAM grant for this prefix is
-  #     bucket-wide rather than name-matched (see iam.tf).
+  #     undocumented) -- see local.pipeline_store_prefix; the build role's
+  #     IAM grant for this prefix is bucket-wide rather than name-matched
+  #     (see iam.tf).
   desired_prefix  = "desired"
   config_prefix   = "config"
   artifact_prefix = "artifacts"
@@ -47,4 +48,6 @@ locals {
   # given. Everything else this module names is free to collide across a
   # second instantiation in the same account, so it carries var.env.
   name_env = "${local.name}-${var.env}"
+
+  pipeline_store_prefix = substr(local.name_env, 0, 20)
 }
