@@ -476,7 +476,6 @@ drained() {
 apply_service_state() {
   if drained; then
     log "Spot drain in progress; leaving thelounge.service alone."
-    return 1
   elif [ "$RESTART_NEEDED" -eq 1 ]; then
     log "Changes applied; restarting thelounge.service."
     systemctl restart thelounge
@@ -504,8 +503,13 @@ main() {
   converge_data
 
   # A drained instance is about to be reclaimed: it must not record or
-  # acknowledge a release it did not restart onto.
-  apply_service_state || return 0
+  # acknowledge a release it did not restart onto. Kept out of an `||` list so
+  # a failed restart still aborts the tick under set -e.
+  if drained; then
+    apply_service_state
+    return 0
+  fi
+  apply_service_state
 
   mark_applied
   ack_release

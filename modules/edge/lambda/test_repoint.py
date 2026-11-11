@@ -285,11 +285,22 @@ def test_worst_case_waits_fit_in_the_lambda_timeout(repoint):
     assert worst_case < timeout
 
 
-def test_instance_without_a_private_dns_name_writes_nothing(monkeypatch, repoint):
+def test_instance_without_a_private_dns_name_still_repoints_and_keeps_domains(
+    monkeypatch, repoint
+):
     cloudfront = FakeCloudFront(
-        "vo_chat", "vo_status", ARN, domain="ip-10-20-0-198.ec2.internal"
+        "vo_old_chat",
+        "vo_old_status",
+        "arn:aws:ec2:us-east-1:123456789012:instance/i-0old",
+        instance="i-0old",
+        domain="ip-10-20-0-198.ec2.internal",
     )
-    install(monkeypatch, repoint, cloudfront, FakeSsm({}))
+    install(
+        monkeypatch,
+        repoint,
+        cloudfront,
+        FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"}),
+    )
     monkeypatch.setattr(
         repoint,
         "_running_instance",
@@ -298,5 +309,9 @@ def test_instance_without_a_private_dns_name_writes_nothing(monkeypatch, repoint
 
     repoint.handler({}, None)
 
-    assert cloudfront.updates == 0
+    assert cloudfront.updates == 1
     assert origin_domains(cloudfront) == ["ip-10-20-0-198.ec2.internal"] * 2
+    assert [
+        o["VpcOriginConfig"]["VpcOriginId"]
+        for o in cloudfront.config["Origins"]["Items"]
+    ] == ["vo_new_thelounge-i-0abc", "vo_new_thelounge-i-0abc-status"]

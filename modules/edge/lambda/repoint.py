@@ -192,7 +192,9 @@ def _origin_by_id(distribution_config, origin_id):
 
 def _domain_name_stale(distribution_config, private_dns):
     origins = (_origin_by_id(distribution_config, r["origin_id"]) for r in ROLES)
-    return any(o is not None and o.get("DomainName") != private_dns for o in origins)
+    return bool(private_dns) and any(
+        o is not None and o.get("DomainName") != private_dns for o in origins
+    )
 
 
 def _sweep_leaked_origins(keep_vpc_origin_ids):
@@ -376,9 +378,6 @@ def handler(event, context):
         return
     instance_id = instance["InstanceId"]
     private_dns = instance["PrivateDnsName"]
-    if not private_dns:
-        print(json.dumps({"action": "no-private-dns", "instance_id": instance_id}))
-        return
 
     new_arn = f"arn:aws:ec2:{REGION}:{ACCOUNT_ID}:instance/{instance_id}"
 
@@ -433,7 +432,8 @@ def handler(event, context):
         # private DNS name; leaving it stale makes every replacement a plan
         # diff. Written for every role so a skipped role cannot keep the fast
         # path from applying.
-        fresh_origin["DomainName"] = private_dns
+        if private_dns:
+            fresh_origin["DomainName"] = private_dns
         vpc_origin_id = resolved[role["role"]]
         if vpc_origin_id is not None:
             fresh_origin["VpcOriginConfig"]["VpcOriginId"] = vpc_origin_id

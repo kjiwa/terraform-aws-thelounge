@@ -4,6 +4,13 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-11
+
+### Fixed
+
+- converge: a failed `systemctl restart` or `start` fails the tick again; 1.0.4 swallowed it while skipping the release record for a drained instance.
+- repoint: an instance reporting no private DNS name is still repointed and swept; only the DomainName write is skipped.
+
 ## [1.0.4] - 2026-11-11
 
 ### Security
@@ -87,7 +94,8 @@ A deployment that ran this stack as a root inside its own repository adopts the 
 3. Run `terraform plan` and confirm it shows moves only. Apply.
 4. Run `sh scripts/deploy.sh --root <root>` from a checkout of this repository, so the instance acknowledges the release it is already running.
 
-[Unreleased]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.1...v1.0.2
