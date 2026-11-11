@@ -100,11 +100,35 @@ test_a_drained_tick_does_not_record_or_acknowledge_the_release() {
   assert_eq "mark and ack otherwise" "mark,ack" "$(records)"
 }
 
+test_a_failed_restart_fails_the_tick() {
+  reset
+  _t_rc=0
+  env PATH="$WORK/bin:$PATH" THELOUNGE_CONVERGE_SOURCE_ONLY=1 \
+    CONFIG_BUCKET=bucket REGION=eu-west-1 DRAIN_MARKER="$MARKER" \
+    sh -c "
+      set -eu
+      . '$CONVERGE'
+      load_env() { :; }
+      ensure_thelounge_user() { :; }
+      ensure_jq() { :; }
+      sync_instance_files() { :; }
+      install_changed() { :; }
+      fetch_desired_config() { :; }
+      sync_release() { RESTART_NEEDED=1; }
+      converge_data() { :; }
+      mark_applied() { :; }
+      ack_release() { :; }
+      systemctl() { return 1; }
+      main" >/dev/null 2>&1 || _t_rc=$?
+  assert_eq "failed restart exits non-zero" "yes" "$([ "$_t_rc" -ne 0 ] && echo yes || echo no)"
+}
+
 main() {
   test_without_a_marker_converge_restarts_and_starts
   test_marker_present_at_start_blocks_restart_and_start
   test_marker_created_mid_run_blocks_restart_and_start
   test_a_drained_tick_does_not_record_or_acknowledge_the_release
+  test_a_failed_restart_fails_the_tick
   finish
 }
 
