@@ -137,7 +137,7 @@ def _wait_deployed(get_status, budget_seconds):
     return status
 
 
-def _running_instance_id():
+def _running_instance():
     # Mirrors the aws_instances filter in vpc_origin.tf. Newest launch wins
     # if a replacement briefly leaves two instances running.
     reservations = ec2.describe_instances(
@@ -149,7 +149,7 @@ def _running_instance_id():
     instances = [i for r in reservations for i in r["Instances"]]
     if not instances:
         return None
-    return max(instances, key=lambda i: i["LaunchTime"])["InstanceId"]
+    return max(instances, key=lambda i: i["LaunchTime"])
 
 
 def _find_vpc_origin_id_by_name(name):
@@ -188,6 +188,11 @@ def _origin_by_id(distribution_config, origin_id):
         ),
         None,
     )
+
+
+def _domain_name_stale(distribution_config, private_dns):
+    origins = (_origin_by_id(distribution_config, r["origin_id"]) for r in ROLES)
+    return any(o is not None and o.get("DomainName") != private_dns for o in origins)
 
 
 def _sweep_leaked_origins(keep_vpc_origin_ids):
@@ -365,10 +370,12 @@ def _publish_vpc_origin_ids(resolved):
 
 
 def handler(event, context):
-    instance_id = _running_instance_id()
-    if instance_id is None:
+    instance = _running_instance()
+    if instance is None:
         print(json.dumps({"action": "no-running-instance"}))
         return
+    instance_id = instance["InstanceId"]
+    private_dns = instance["PrivateDnsName"]
 
     new_arn = f"arn:aws:ec2:{REGION}:{ACCOUNT_ID}:instance/{instance_id}"
 
@@ -396,7 +403,7 @@ def handler(event, context):
     resolved = {"chat": chat_id, "status": status_id}
     keep_ids = {vpc_origin_id for vpc_origin_id in resolved.values() if vpc_origin_id}
 
-    if resolved == orig_ids:
+    if resolved == orig_ids and not _domain_name_stale(dist_config, private_dns):
         # Fast path: nothing to write, just two-to-four cheap read calls
         # above. Sweep still runs -- see _sweep_leaked_origins' docstring
         # for why that must not be conditional on a repoint having happened.
@@ -422,6 +429,10 @@ def handler(event, context):
         fresh_origin = _origin_by_id(fresh_config, role["origin_id"])
         if fresh_origin is not None:
             fresh_origin["VpcOriginConfig"]["VpcOriginId"] = vpc_origin_id
+            # Not used for routing, but Terraform manages it from the
+            # instance's private DNS name; leaving it stale makes every
+            # replacement a plan diff.
+            fresh_origin["DomainName"] = private_dns
 
     cloudfront.update_distribution(
         Id=DISTRIBUTION_ID, IfMatch=fresh["ETag"], DistributionConfig=fresh_config
