@@ -88,12 +88,23 @@ wait_for_block_device() {
 }
 
 # First boot on a fresh volume only; a restored or reattached volume already
-# has a filesystem and is left alone.
+# has a filesystem and is left alone. blkid exits 2 when it finds no
+# filesystem; any other failure is a probe error, and formatting on it could
+# wipe the data.
 format_if_needed() {
-  if ! blkid "$1" >/dev/null 2>&1; then
+  _format_if_needed_rc=0
+  blkid "$1" >/dev/null 2>&1 || _format_if_needed_rc=$?
+  case "$_format_if_needed_rc" in
+  0) ;;
+  2)
     log "Formatting ext4 on $1..."
     mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0 "$1"
-  fi
+    ;;
+  *)
+    log "ERROR: blkid $1 exited $_format_if_needed_rc; refusing to format"
+    return 1
+    ;;
+  esac
 }
 
 # By UUID, not device path: the NVMe namespace isn't stable across boots.
