@@ -1,4 +1,4 @@
 # Dev/test-only dependencies for the Python suites (modules/edge/lambda,
 # modules/llm-gateway/lambda, modules/status/tests). Not shipped.
 pytest==9.2.0
-boto3==1.43.124
+boto3==1.43.126
