@@ -108,7 +108,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     id     = "expire-pipeline-artifact-store"
     status = "Enabled"
     filter {
-      prefix = "${local.name_env}/"
+      prefix = "${local.pipeline_store_prefix}/"
     }
     expiration {
       days = 7
