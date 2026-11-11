@@ -4,6 +4,31 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-11
+
+### Security
+
+- The build role can no longer write `config/`, `desired/` or `deployed/`, or read `config/`. Its bucket-wide artifact-store grant had let a build step rewrite the config the instance installs as root and read `config/users.json`.
+- The repoint role's distribution actions are scoped to the distribution, and Get/DeleteVpcOrigin to the account's VPC origins.
+- `thelounge_config` rejects `public`, `reverseProxy`, `host` and `port`, which the stack pins. A caller that set one broke the security group and VPC origin contract silently; plans now fail with a message naming the keys.
+
+### Fixed
+
+- Converge no longer restarts thelounge after a Spot drain. The drain writes `/run/thelounge-drained` before stopping the unit, and converge leaves the unit alone while the marker exists, including when the drain fires mid-run.
+- The pipeline-artifact expiry rule matches the 20-character prefix CodePipeline writes (`thelounge-delivery-p/`), so those objects expire after 7 days.
+- The repoint Lambda also keeps both origins' `DomainName` at the running instance's private DNS name, so a Spot replacement no longer leaves a permanent plan diff. The repoint function runs on arm64.
+- The data volume is formatted only when `blkid` reports no filesystem (exit 2); any other `blkid` failure aborts boot instead of formatting.
+
+### Changed
+
+- `node_version` defaults to 22.23.5.
+- Uses terraform-aws-keel v0.2.1 and terraform-aws-status-page v0.3.2.
+- `enable_public_ipv4` documents that the CloudFront-to-EIP hop is plain HTTP.
+
+### Upgrade
+
+- `terraform init -upgrade`, then apply. The default `node_version` change triggers a build and a new release; the repoint function is updated in place.
+
 ## [1.0.3] - 2026-11-04
 
 ### Fixed
@@ -62,5 +87,9 @@ A deployment that ran this stack as a root inside its own repository adopts the 
 3. Run `terraform plan` and confirm it shows moves only. Apply.
 4. Run `sh scripts/deploy.sh --root <root>` from a checkout of this repository, so the instance acknowledges the release it is already running.
 
-[Unreleased]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/kjiwa/terraform-aws-thelounge/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/kjiwa/terraform-aws-thelounge/releases/tag/v1.0.0

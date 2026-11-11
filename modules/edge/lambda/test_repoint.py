@@ -183,7 +183,8 @@ def test_fast_path_rewrites_a_stale_domain_name(monkeypatch, repoint):
     assert cloudfront.updates == 1
     assert origin_domains(cloudfront) == [DNS, DNS]
     assert [
-        o["VpcOriginConfig"]["VpcOriginId"] for o in cloudfront.config["Origins"]["Items"]
+        o["VpcOriginConfig"]["VpcOriginId"]
+        for o in cloudfront.config["Origins"]["Items"]
     ] == ["vo_chat", "vo_status"]
 
 

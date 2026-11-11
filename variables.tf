@@ -110,7 +110,7 @@ variable "thelounge_plugins" {
 variable "node_version" {
   description = "Node.js version the app-delivery pipeline's build environment uses to install and run The Lounge."
   type        = string
-  default     = "22.17.0"
+  default     = "22.23.5"
 }
 
 variable "thelounge_config" {
@@ -213,7 +213,7 @@ variable "disk_alarm_used_percent" {
 }
 
 variable "enable_public_ipv4" {
-  description = "Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead."
+  description = "Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. The CloudFront-to-EIP hop is plain HTTP (origin_protocol_policy http-only), so it crosses the public internet unencrypted. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead."
   type        = bool
   default     = false
 }
