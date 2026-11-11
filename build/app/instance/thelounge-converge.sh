@@ -9,7 +9,8 @@
 # release; (4) restart thelounge.service if (2) or (3) changed anything, or
 # start it if not already running (thelounge.service is never `systemctl
 # enable`d, so a reboot leaves it stopped with nothing "changed" -- see
-# thelounge.service and user_data.sh.tftpl).
+# thelounge.service and user_data.sh.tftpl), unless the Spot drain marker
+# exists.
 #
 # Fires on thelounge-converge.timer. Sources /etc/thelounge/instance.env,
 # written by user_data as the last step of boot glue.
@@ -25,6 +26,9 @@ readonly UNIT_DIR="/etc/systemd/system"
 readonly RELEASES_DIR="${RELEASES_DIR:-/opt/thelounge/releases}"
 readonly CURRENT_LINK="${CURRENT_LINK:-/opt/thelounge/current}"
 readonly APPLIED_FILE="${APPLIED_FILE:-/opt/thelounge/applied.sha}"
+# Written by thelounge-spot-drain before it stops the unit; /run is tmpfs, so
+# a reboot clears it. DRAIN_MARKER is overridable for the tests.
+readonly DRAIN_MARKER="${DRAIN_MARKER:-/run/thelounge-drained}"
 readonly KEEP_RELEASES=2
 readonly THELOUNGE_USER="thelounge"
 readonly DEPLOYED_PREFIX="deployed"
@@ -461,6 +465,30 @@ ack_release() {
   return 0
 }
 
+drained() {
+  [ -e "$DRAIN_MARKER" ]
+}
+
+# A drained unit stays stopped: the instance is about to be reclaimed, and a
+# restart would drop the clients the drain just disconnected cleanly. The
+# marker is checked here, after sync_release and converge_data, so a drain that
+# fires while this tick runs also stands it down.
+apply_service_state() {
+  if drained; then
+    log "Spot drain in progress; leaving thelounge.service alone."
+  elif [ "$RESTART_NEEDED" -eq 1 ]; then
+    log "Changes applied; restarting thelounge.service."
+    systemctl restart thelounge
+  elif ! systemctl is-active --quiet thelounge; then
+    # thelounge.service is never enabled (see that unit), so a plain reboot
+    # leaves it stopped even though nothing "changed" here.
+    log "thelounge.service not running; starting it."
+    systemctl start thelounge
+  else
+    log "No changes; thelounge.service already running."
+  fi
+}
+
 main() {
   load_env
   ensure_thelounge_user
@@ -474,17 +502,7 @@ main() {
 
   converge_data
 
-  if [ "$RESTART_NEEDED" -eq 1 ]; then
-    log "Changes applied; restarting thelounge.service."
-    systemctl restart thelounge
-  elif ! systemctl is-active --quiet thelounge; then
-    # thelounge.service is never enabled (see that unit), so a plain reboot
-    # leaves it stopped even though nothing "changed" here.
-    log "thelounge.service not running; starting it."
-    systemctl start thelounge
-  else
-    log "No changes; thelounge.service already running."
-  fi
+  apply_service_state
 
   mark_applied
   ack_release
