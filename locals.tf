@@ -2,8 +2,9 @@ locals {
   # Shallow merge, deliberately minimal: only what this architecture
   # requires is pinned here -- private mode, proxy trust for CloudFront,
   # bind-all for the VPC-origin ENI path, and the port the security
-  # group/VPC origin/user_data contract all agree on. Everything else is
-  # left to var.thelounge_config and The Lounge's own upstream defaults.
+  # group/VPC origin/user_data contract all agree on. var.thelounge_config
+  # may not set these keys (validated); everything else is left to it and
+  # The Lounge's own upstream defaults.
   thelounge_config_defaults = {
     public       = false
     reverseProxy = true

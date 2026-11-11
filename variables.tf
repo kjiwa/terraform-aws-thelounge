@@ -114,9 +114,14 @@ variable "node_version" {
 }
 
 variable "thelounge_config" {
-  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port) and rendered to the delivery bucket."
+  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port), which it may not override and rendered to the delivery bucket."
   type        = any
   default     = {}
+
+  validation {
+    condition     = length(setintersection(keys(var.thelounge_config), ["public", "reverseProxy", "host", "port"])) == 0
+    error_message = "thelounge_config must not set public, reverseProxy, host or port: this stack pins them because the security group, VPC origin and user_data depend on their values."
+  }
 }
 
 variable "thelounge_users" {
