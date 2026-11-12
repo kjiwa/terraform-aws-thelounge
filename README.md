@@ -126,7 +126,7 @@ It is off unless `status.enabled` is set. `status.public_reliability` serves red
 
    ```hcl
    module "thelounge" {
-     source = "git::https://github.com/kjiwa/terraform-aws-thelounge.git?ref=v1.1.0"
+     source = "git::https://github.com/kjiwa/terraform-aws-thelounge.git?ref=v2.0.0"
      providers = {
        aws           = aws
        aws.us_east_1 = aws.us_east_1

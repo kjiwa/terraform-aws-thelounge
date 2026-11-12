@@ -4,7 +4,7 @@ Hosted zone, cost budget, and audit trail from [terraform-aws-keel](https://gith
 
 ```hcl
 module "thelounge" {
-  source = "git::https://github.com/kjiwa/terraform-aws-thelounge.git?ref=v1.1.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-thelounge.git?ref=v2.0.0"
   providers = {
     aws           = aws
     aws.us_east_1 = aws.us_east_1

@@ -68,6 +68,14 @@ test_check_declining_means_no_drain() {
   assert_eq "only the check ran" "keel-rightsize-check eu-west-1 thelounge-prod 5" "$(cat "$CALLS")"
 }
 
+test_check_failure_is_logged_and_does_not_drain() {
+  printf '%s\n' "$FULL_ENV" >"$WORK/instance.env"
+  : >"$CALLS"
+  _out="$(CHECK_EXIT=3 PATH="$WORK/bin:$PATH" INSTANCE_ENV="$WORK/instance.env" sh "$SCRIPT" 2>&1)"
+  assert_eq "failure is logged" "[rightsize-watchdog] keel-rightsize-check exited 3; staying." "$_out"
+  assert_eq "only the check ran" "keel-rightsize-check eu-west-1 thelounge-prod 5" "$(cat "$CALLS")"
+}
+
 test_check_approving_drains_then_terminates() {
   assert_eq "exit status" "exit=0" "$(run_script "$FULL_ENV" 0)"
   assert_eq "call order" "keel-rightsize-check eu-west-1 thelounge-prod 5
@@ -86,6 +94,7 @@ main() {
   test_missing_asg_name_does_nothing
   test_missing_region_does_nothing
   test_check_declining_means_no_drain
+  test_check_failure_is_logged_and_does_not_drain
   test_check_approving_drains_then_terminates
   test_uptime_hours_default_to_three
   finish
