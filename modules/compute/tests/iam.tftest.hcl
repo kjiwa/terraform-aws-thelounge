@@ -56,3 +56,32 @@ run "instance_may_read_the_deploy_acknowledgement_it_writes" {
     error_message = "converge reads the acknowledgement to skip rewriting it, so deployed/* needs s3:GetObject beside s3:PutObject."
   }
 }
+
+run "instance_may_call_every_api_the_rightsize_check_makes" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for action in [
+        "autoscaling:DescribeAutoScalingGroups",
+        "ec2:GetInstanceTypesFromInstanceRequirements",
+        "ec2:DescribeSpotPriceHistory",
+        "ec2:GetSpotPlacementScores",
+      ] :
+      anytrue([
+        for s in data.aws_iam_policy_document.instance.statement :
+        contains(s.actions, action) && s.effect == "Allow" && s.resources == toset(["*"])
+      ])
+    ])
+    error_message = "The instance policy must allow every API scripts/keel/rightsize-check.sh calls: autoscaling:DescribeAutoScalingGroups, ec2:GetInstanceTypesFromInstanceRequirements, ec2:DescribeSpotPriceHistory, ec2:GetSpotPlacementScores."
+  }
+}
+
+run "instance_env_exports_the_asg_name" {
+  command = plan
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.this["arm64"].user_data), "readonly ASG_NAME=\"thelounge-prod\"") && strcontains(base64decode(aws_launch_template.this["arm64"].user_data), "export ASG_NAME=$ASG_NAME")
+    error_message = "user_data must export ASG_NAME (the ASG's name) through instance.env for the rightsize check."
+  }
+}

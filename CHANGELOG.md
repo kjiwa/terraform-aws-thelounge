@@ -1,8 +1,25 @@
 # Changelog
 
-All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
+All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-11-12
+
+### Changed
+
+- The rightsize watchdog uses the shared check from terraform-aws-keel v0.3.0, vendored as `scripts/keel/rightsize-check.sh` and installed as `keel-rightsize-check`. It replaces the instance when the cheapest eligible Spot pool costs at most 75% of the current type's price and the placement score is at least 5. Any API failure now leaves the instance in place; the old watchdog proceeded when the placement score was unavailable.
+- The instance policy gains `autoscaling:DescribeAutoScalingGroups`, `ec2:DescribeSpotPriceHistory` and `ec2:GetInstanceTypesFromInstanceRequirements`, and `instance.env` exports `ASG_NAME`.
+- The watchdog logs any check failure other than an ordinary decline.
+- Uses terraform-aws-status-page v0.7.0.
+
+### Removed
+
+- `instance_requirements.preferred_types` and its validation. Callers that set `instance_requirements` must drop the key.
+
+### Upgrade
+
+- `terraform init -upgrade`, then apply. The launch template changes, so applying refreshes the instance. The availability schedule rule and its Lambda permission are replaced.
 
 ## [1.0.5] - 2026-11-11
 

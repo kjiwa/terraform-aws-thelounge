@@ -58,13 +58,12 @@ variable "cpu_credits" {
 }
 
 variable "instance_requirements" {
-  description = "Wholesale override of the ASG instance spec (vCPU/memory floor, per-arch allowed types, and the rightsize watchdog's preferred types). Null (default) derives a spec sized for The Lounge's idle footprint. preferred_types must be non-empty and a subset of the allowed lists (validated in the compute module)."
+  description = "Wholesale override of the ASG instance spec (vCPU/memory floor, per-arch allowed types). Null (default) derives a spec sized for The Lounge's idle footprint."
   type = object({
     vcpu_min             = number
     memory_mib_min       = number
     allowed_types_arm64  = list(string)
     allowed_types_x86_64 = list(string)
-    preferred_types      = list(string)
   })
   default = null
 }
@@ -76,7 +75,7 @@ variable "ami_ids" {
 }
 
 variable "rightsize_schedule" {
-  description = "systemd OnCalendar expression for the rightsize watchdog's schedule (scale-back to the cheapest preferred Spot pool). Accepts a timezone suffix (e.g. \"*-*-* 17:00:00 Europe/Berlin\") to track DST. Applied via a user-data timer drop-in, so a change takes effect on the next instance replacement. Spot only."
+  description = "systemd OnCalendar expression for the rightsize watchdog's schedule (replacement when the cheapest eligible Spot pool costs at most 75% of the current type's price). Accepts a timezone suffix (e.g. \"*-*-* 17:00:00 Europe/Berlin\") to track DST. Applied via a user-data timer drop-in, so a change takes effect on the next instance replacement. Spot only."
   type        = string
   default     = "*-*-* 09:00:00 UTC"
   validation {

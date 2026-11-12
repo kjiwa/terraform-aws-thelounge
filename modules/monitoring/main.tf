@@ -2,7 +2,7 @@
 # the status-page core; backup alerts, the disk alarm and the dashboard in its
 # host-alarms module.
 module "availability" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.3.2"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.7.0"
 
   name_prefix      = "thelounge"
   metric_namespace = "TheLounge"
@@ -17,7 +17,7 @@ module "availability" {
 }
 
 module "host_alarms" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.3.2"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.7.0"
 
   name_prefix                       = "thelounge"
   metric_namespace                  = "TheLounge"

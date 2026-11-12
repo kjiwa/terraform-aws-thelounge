@@ -125,13 +125,18 @@ data "aws_iam_policy_document" "instance" {
     }
   }
 
-  # Rightsize watchdog's capacity gate: score the preferred Spot pools
-  # before forcing a replacement. Read-only, account-level; not
-  # resource-scopable.
+  # Rightsize check (keel-rightsize-check): the ASG's instance requirements,
+  # the eligible types, their Spot prices, and the capacity gate's placement
+  # score. Read-only with no resource-level permissions.
   statement {
-    sid       = "SpotPlacementScores"
-    effect    = "Allow"
-    actions   = ["ec2:GetSpotPlacementScores"]
+    sid    = "RightsizePriceReads"
+    effect = "Allow"
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "ec2:DescribeSpotPriceHistory",
+      "ec2:GetInstanceTypesFromInstanceRequirements",
+      "ec2:GetSpotPlacementScores",
+    ]
     resources = ["*"]
   }
 

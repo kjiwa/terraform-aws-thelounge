@@ -4,15 +4,15 @@ locals {
   # requirement: user_data finds the data volume by NVMe controller serial
   # and the launch template sets ebs_optimized = true, neither of which
   # works on Xen. Allow-lists stop at .small -- The Lounge never needs more.
-  # preferred_types is the cheapest tier (nano, arm64 first); the rightsize
-  # watchdog replaces the instance when Spot placed it elsewhere, since
-  # price-capacity-optimized only picks a pool at launch.
+  # The rightsize watchdog replaces the instance when the cheapest eligible
+  # pool costs at most 75% of its type's Spot price, since
+  # price-capacity-optimized only picks a pool at launch. The eligible types
+  # come from the ASG's own requirements, so the allow-lists are the only list.
   derived_instance_requirements = {
     vcpu_min             = 1
     memory_mib_min       = 512
     allowed_types_arm64  = ["t4g.nano", "t4g.micro", "t4g.small"]
     allowed_types_x86_64 = ["t3.nano", "t3a.nano", "t3.micro", "t3a.micro", "t3.small", "t3a.small"]
-    preferred_types      = ["t4g.nano", "t3a.nano", "t3.nano"]
   }
 
   instance_requirements = (

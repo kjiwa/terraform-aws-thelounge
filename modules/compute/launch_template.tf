@@ -42,8 +42,7 @@ resource "aws_launch_template" "this" {
     ebs_volume_id     = var.ebs_volume_id
     eip_allocation_id = var.eip_allocation_id != null ? var.eip_allocation_id : ""
     config_bucket     = var.config_bucket_name
-    # Space-separated for POSIX-sh consumption by the rightsize watchdog.
-    preferred_instance_types = join(" ", local.instance_requirements.preferred_types)
+    asg_name          = local.name_env
     # Applied as a systemd timer drop-in at boot; see configure_rightsize_timer.
     rightsize_schedule = var.rightsize_schedule
     # The watchdog's churn bound; consumed from instance.env.

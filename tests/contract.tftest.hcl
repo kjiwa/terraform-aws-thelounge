@@ -404,3 +404,16 @@ run "rejects_a_username_that_is_not_a_safe_file_name" {
   }
   expect_failures = [var.thelounge_users]
 }
+
+run "config_objects_ship_the_vendored_rightsize_check" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  assert {
+    condition     = contains(keys(local.config_objects), "instance/keel-rightsize-check.sh")
+    error_message = "The vendored keel rightsize check must ship in config_objects so converge installs it as keel-rightsize-check."
+  }
+}

@@ -20,11 +20,17 @@ locals {
   # Fans out build/app/instance/* (converge/watchdog scripts and systemd
   # units) into the config_objects map under an "instance/" prefix. New
   # files dropped there ship to S3, and so to every instance's next converge
-  # tick, without touching this root.
-  instance_files = {
-    for f in fileset("${path.module}/build/app/instance", "*") :
-    "instance/${f}" => file("${path.module}/build/app/instance/${f}")
-  }
+  # tick, without touching this root. The vendored keel rightsize check
+  # ships beside them and installs as keel-rightsize-check.
+  instance_files = merge(
+    {
+      for f in fileset("${path.module}/build/app/instance", "*") :
+      "instance/${f}" => file("${path.module}/build/app/instance/${f}")
+    },
+    {
+      "instance/keel-rightsize-check.sh" = file("${path.module}/scripts/keel/rightsize-check.sh")
+    },
+  )
 
   # Contract: thelounge-converge.sh reads exactly config/instance/* (synced
   # wholesale), config/config.js, and config/users.json. Every key below is

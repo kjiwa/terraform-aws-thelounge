@@ -57,5 +57,5 @@ aws_as() {
     aws "$@"
   fi
 }
-# Vendored from terraform-aws-keel v0.1.2, scripts/common.sh. Do not edit here: change
+# Vendored from terraform-aws-keel v0.3.0, scripts/common.sh. Do not edit here: change
 # keel and re-vendor. scripts/check-keel-drift.sh fails when this copy differs.
