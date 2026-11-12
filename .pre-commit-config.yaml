@@ -7,6 +7,10 @@ repos:
         # Parallel `terraform init` races on TF_PLUGIN_CACHE_DIR in CI
         # (hashicorp/terraform#31964).
         args:
+          # Re-init once when a cached provider no longer matches the lock file.
+          # First, because terraform_validate.sh does not trim the space the
+          # hook framework puts before later --hook-config entries.
+          - --hook-config=--retry-once-with-cleanup=true
           - --hook-config=--parallelism-limit=1
         # The root module and modules/edge declare configuration_aliases, which
         # cannot bind when a module is validated standalone as this hook does
