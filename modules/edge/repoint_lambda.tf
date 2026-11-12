@@ -63,7 +63,7 @@ resource "aws_cloudwatch_log_group" "repoint" {
 
 # Reconcile on a schedule rather than react to a launch event: see the
 # module docstring in lambda/repoint.py for why. Mirrors the availability
-# module's canary schedule (modules/availability/lambda.tf in terraform-aws-status-page).
+# module's schedule (modules/availability/lambda.tf in terraform-aws-status-page).
 resource "aws_cloudwatch_event_rule" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 

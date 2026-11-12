@@ -25,31 +25,14 @@ variable "cpu_credits" {
 }
 
 variable "instance_requirements" {
-  description = "Wholesale override of the ASG instance spec (see the stack root's var.instance_requirements for the full rationale). All-or-nothing: the memory floor and per-architecture type lists must not drift apart, or a floor above a listed type's memory silently filters that type out. preferred_types spans both architectures."
+  description = "Wholesale override of the ASG instance spec (see the stack root's var.instance_requirements for the full rationale). All-or-nothing: the memory floor and per-architecture type lists must not drift apart, or a floor above a listed type's memory silently filters that type out."
   type = object({
     vcpu_min             = number
     memory_mib_min       = number
     allowed_types_arm64  = list(string)
     allowed_types_x86_64 = list(string)
-    preferred_types      = list(string)
   })
   default = null
-  validation {
-    condition = var.instance_requirements == null ? true : (
-      length(var.instance_requirements.preferred_types) > 0 &&
-      alltrue([
-        for t in var.instance_requirements.preferred_types :
-        contains(
-          concat(
-            var.instance_requirements.allowed_types_arm64,
-            var.instance_requirements.allowed_types_x86_64,
-          ),
-          t,
-        )
-      ])
-    )
-    error_message = "preferred_types must be non-empty and a subset of allowed_types_arm64 + allowed_types_x86_64. A preferred type that can never launch would make the rightsize watchdog attempt a replacement at every tick its guards allow, forever. To disable the scale-back, set preferred_types to the full allowed set."
-  }
 }
 
 variable "ami_ids" {

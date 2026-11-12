@@ -11,7 +11,7 @@ readonly REGION="${region}"
 readonly EIP_ALLOC="${eip_allocation_id}"
 readonly EBS_VOLUME_ID="${ebs_volume_id}"
 readonly CONFIG_BUCKET="${config_bucket}"
-readonly PREFERRED_INSTANCE_TYPES="${preferred_instance_types}"
+readonly ASG_NAME="${asg_name}"
 readonly RIGHTSIZE_SCHEDULE="${rightsize_schedule}"
 readonly RIGHTSIZE_MIN_UPTIME_HOURS="${rightsize_min_uptime_hours}"
 
@@ -280,7 +280,7 @@ export CONFIG_PREFIX=$CONFIG_PREFIX
 export ARTIFACT_PREFIX=$ARTIFACT_PREFIX
 export DATA_ROOT=$DATA_ROOT
 export THELOUNGE_HOME=$THELOUNGE_HOME
-export PREFERRED_INSTANCE_TYPES="$PREFERRED_INSTANCE_TYPES"
+export ASG_NAME=$ASG_NAME
 export RIGHTSIZE_MIN_UPTIME_HOURS=$RIGHTSIZE_MIN_UPTIME_HOURS
 export AWS_USE_DUALSTACK_ENDPOINT=true
 ENV

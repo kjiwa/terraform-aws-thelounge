@@ -2,7 +2,7 @@
 # core's objects and supplies plugin/plugin.py and config.js.tpl. The root
 # attaches the origins and behaviors outputs to the distribution in modules/edge.
 module "core" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/status?ref=v0.3.2"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/status?ref=v0.7.0"
 
   name_prefix      = "thelounge"
   bucket_name      = "${replace(var.primary_domain, ".", "-")}-status"

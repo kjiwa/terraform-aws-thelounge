@@ -1,9 +1,9 @@
-# Single rightsize tick: replace the instance if it is not running one of
-# the Terraform-preferred (cheapest) types. Driven by
+# Single rightsize tick: replace the instance if a cheaper eligible Spot pool
+# is available. Driven by
 # thelounge-rightsize-watchdog.timer; installed and enabled by user_data on
 # first boot, kept current thereafter by thelounge-converge.sh.
 [Unit]
-Description=thelounge scale-back to the preferred Spot tier
+Description=thelounge scale-back to the cheapest eligible Spot pool
 Wants=network-online.target
 After=network-online.target
 
