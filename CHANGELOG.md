@@ -4,6 +4,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Changed
+
+- A pinned `ami_ids` that is behind the latest AL2023 release warns on every plan, naming the newer image per architecture. The SSM parameters are now read even when pinned, so a plan needs `ssm:GetParameter` on them either way.
+
 ## [2.0.0] - 2026-11-12
 
 ### Changed

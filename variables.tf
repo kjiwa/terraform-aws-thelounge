@@ -69,7 +69,7 @@ variable "instance_requirements" {
 }
 
 variable "ami_ids" {
-  description = "Per-architecture AMI IDs, keyed \"arm64\" and \"x86_64\". Null (default) resolves both from AL2023 SSM public parameters at apply time. Pin to freeze the fleet at a specific image; changes roll out via the ASG's instance refresh."
+  description = "Per-architecture AMI IDs, keyed \"arm64\" and \"x86_64\". Null (default) resolves both from AL2023 SSM public parameters at apply time. Pin to freeze the fleet at a specific image; changes roll out via the ASG's instance refresh. A pin that is behind the latest release warns on every plan."
   type        = map(string)
   default     = null
 }
