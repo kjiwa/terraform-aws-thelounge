@@ -4,6 +4,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Changed
+
+- A pinned `ami_ids` that differs from the latest AL2023 release warns on every plan, naming the latest image per architecture. The SSM parameters under `/aws/service/ami-amazon-linux-latest/` are now read even when pinned, so a pinned stack whose plan role lacks `ssm:GetParameter` on them, or a region without them, fails to plan.
+
 ## [2.0.0] - 2026-11-12
 
 ### Changed
