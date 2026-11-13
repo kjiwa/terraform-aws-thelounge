@@ -33,7 +33,7 @@ run "unpinned_follows_the_latest_release" {
   }
 }
 
-run "current_pin_is_used_and_does_not_warn" {
+run "current_pin_is_used_and_flags_nothing_stale" {
   command = plan
   variables {
     ami_ids = { arm64 = "ami-0123456789abcdef0", x86_64 = "ami-0123456789abcdef0" }
@@ -42,6 +42,11 @@ run "current_pin_is_used_and_does_not_warn" {
   assert {
     condition     = local.ami_ids["arm64"] == var.ami_ids["arm64"] && local.ami_ids["x86_64"] == var.ami_ids["x86_64"]
     error_message = "A pin must be used as given."
+  }
+
+  assert {
+    condition     = length(local.stale_ami_ids) == 0
+    error_message = "A pin equal to the latest release must not be flagged."
   }
 }
 

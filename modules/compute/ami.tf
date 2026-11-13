@@ -26,6 +26,6 @@ locals {
 check "ami_ids_are_latest" {
   assert {
     condition     = length(local.stale_ami_ids) == 0
-    error_message = "ami_ids is behind the latest AL2023: ${join(", ", [for architecture, latest in local.stale_ami_ids : "${architecture} ${local.ami_ids[architecture]} -> ${latest}"])}."
+    error_message = "ami_ids differs from the latest AL2023 (the SSM parameter may lag a newer pin): ${join(", ", [for architecture, latest in local.stale_ami_ids : "${architecture} ${local.ami_ids[architecture]} -> ${latest}"])}."
   }
 }
