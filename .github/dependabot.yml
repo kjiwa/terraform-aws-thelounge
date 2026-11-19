@@ -10,7 +10,7 @@ updates:
         patterns: ["*"]
 
   # The root module's and the examples' lock files only, not the modules'
-  # versions.tf floors: those are deliberately broad (">= 6.0") and pinned
+  # versions.tf floors: those are deliberately broad (">= 6.45") and pinned
   # exactly only by a consumer's lock file.
   - package-ecosystem: terraform
     directories:

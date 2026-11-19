@@ -6,6 +6,9 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ### Changed
 
+- Status-page modules v0.7.0 to v0.8.0.
+- Terraform floors align with the sibling modules: aws provider `>= 6.45`, Terraform `>= 1.15` in every module.
+- Outages are planned only for `deploy`, `instance-refresh` and `capacity-change`. `rightsize` and `backup` are matched by SSM markers this stack never writes, so they never matched.
 - A pinned `ami_ids` that differs from the latest AL2023 release warns on every plan, naming the latest image per architecture. The SSM parameters under `/aws/service/ami-amazon-linux-latest/` are now read even when pinned, so a pinned stack whose plan role lacks `ssm:GetParameter` on them, or a region without them, fails to plan.
 
 ## [2.0.0] - 2026-11-12
