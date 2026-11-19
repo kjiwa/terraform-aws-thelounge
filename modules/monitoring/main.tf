@@ -1,8 +1,13 @@
 # Recorder (canary, alerts topic, episodes and Spot logs, change log) lives in
 # the status-page core; backup alerts, the disk alarm and the dashboard in its
 # host-alarms module.
+locals {
+  # rightsize and backup are attributed from SSM markers this stack never writes.
+  planned_causes = ["deploy", "instance-refresh", "capacity-change"]
+}
+
 module "availability" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.7.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.8.0"
 
   name_prefix      = "thelounge"
   metric_namespace = "TheLounge"
@@ -10,6 +15,7 @@ module "availability" {
   asg_name         = var.asg_name
   alert_email      = var.alert_email
   active           = var.active
+  planned_causes   = local.planned_causes
 
   # Named by the sibling module rather than referenced: the alarm's actions
   # use this module's topic, so a resource reference would be a cycle.
@@ -17,7 +23,7 @@ module "availability" {
 }
 
 module "host_alarms" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.7.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.8.0"
 
   name_prefix                       = "thelounge"
   metric_namespace                  = "TheLounge"

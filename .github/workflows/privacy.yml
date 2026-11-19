@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   privacy:
-    uses: kjiwa/.github/.github/workflows/privacy.yml@main
+    uses: kjiwa/.github/.github/workflows/privacy.yml@547cd4686bf9cd63a939e6373c37dfcb6838c08c # main

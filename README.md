@@ -113,7 +113,7 @@ It is off unless `status.enabled` is set. `status.public_reliability` serves red
 
 ## Requirements
 
-- Terraform 1.15 or later and the AWS provider 6.0 or later. The module needs an `aws.us_east_1` provider alias for the CloudFront certificate.
+- Terraform 1.15 or later and the AWS provider 6.45 or later. The module needs an `aws.us_east_1` provider alias for the CloudFront certificate.
 - A public Route 53 hosted zone for `domain_name`, passed as `zone_id`. [terraform-aws-keel](https://github.com/kjiwa/terraform-aws-keel)'s `dns` module creates one.
 - For the operator scripts under `scripts/`: the AWS CLI, `terraform`, `jq`, and `curl`.
 - For catch-up (`catchup.enabled`): model access enabled in the Bedrock console.
@@ -202,7 +202,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Licensed 
 | Name | Version |
 | ---- | ------- |
 | terraform | >= 1.15 |
-| aws | >= 6.0 |
+| aws | >= 6.45 |
 
 ## Resources
 
