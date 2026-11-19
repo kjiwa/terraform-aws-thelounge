@@ -31,13 +31,15 @@ If it returns `"false"`, enable it from the management account with `aws_backup_
 
 ## 2. Backup account: state bucket
 
+`<keel-tag>` below is the terraform-aws-keel tag that `examples/minimal/main.tf` pins.
+
 The backup account needs its own Terraform state, in its own account. Pointing it at the workload account's bucket would invert the isolation this exercise creates.
 
 In `<backup-root>`, a root with its own AWS provider for the backup account (pin `allowed_account_ids` to it, so the wrong `AWS_PROFILE` fails instead of building the bucket elsewhere):
 
 ```hcl
 module "state" {
-  source      = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/state-bucket?ref=v0.2.1"
+  source      = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/state-bucket?ref=<keel-tag>"
   bucket_name = "<state-bucket>"
 }
 ```
@@ -50,7 +52,7 @@ aws s3api create-bucket --bucket <state-bucket> --region <backup_region> \
   --create-bucket-configuration LocationConstraint=<backup_region>
 
 terraform -chdir=<backup-root> init -backend-config=backend.hcl
-terraform -chdir=<backup-root> import module.state.aws_s3_bucket.tfstate_web <state-bucket>
+terraform -chdir=<backup-root> import module.state.aws_s3_bucket.this <state-bucket>
 terraform -chdir=<backup-root> apply
 ```
 
@@ -64,7 +66,7 @@ Add keel's `backup-vault-account` module to `<backup-root>`:
 
 ```hcl
 module "backup_vault" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/backup-vault-account?ref=v0.2.1"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/backup-vault-account?ref=<keel-tag>"
 
   name_prefix                   = "thelounge"
   vault_name                    = "thelounge-backup"
