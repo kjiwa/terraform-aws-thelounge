@@ -2,6 +2,16 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.2.0] - 2026-11-20
+
+### Added
+
+- A CloudFront response headers policy on the client and `/status/api`: HSTS (one year, no subdomains or preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP. The status page behaviors set their own headers.
+
+### Upgrade
+
+- The plan adds one response headers policy and updates the distribution in place. CloudFront redeploys with no downtime expected, and no instance refresh starts.
+
 ## [2.1.1] - 2026-11-20
 
 ### Fixed

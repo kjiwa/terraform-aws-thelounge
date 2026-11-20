@@ -126,6 +126,8 @@ resource "aws_cloudfront_distribution" "this" {
     # domain_name CloudFront already sets, not the public alias).
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
     origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # AllViewerExceptHostHeader
+
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.this.id
   }
 
   # Status page core (modules/status): exact path patterns, never a wildcard.
@@ -170,6 +172,8 @@ resource "aws_cloudfront_distribution" "this" {
       compress                 = true
       cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
       origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # AllViewerExceptHostHeader
+
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.this.id
     }
   }
 
