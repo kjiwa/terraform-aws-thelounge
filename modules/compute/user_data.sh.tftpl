@@ -1,8 +1,8 @@
 #!/bin/sh
 # Boot glue: attach and mount the data volume, lay down swap, associate the
-# EIP if the enable_public_ipv4 hatch is on, turn on unattended security
-# updates, then fetch and install the on-instance script/unit suite from S3
-# and start it. The readonly assignments below are Terraform templatefile()
+# EIP if the enable_public_ipv4 hatch is on, install jq, fetch and install the
+# on-instance script/unit suite from S3, start the first converge, then turn
+# on unattended security updates once the app is up. The readonly assignments below are Terraform templatefile()
 # substitutions baked in at plan time, not shell parameter expansions; the
 # rest of the script is plain POSIX sh operating on the shell copies.
 set -eu
@@ -21,6 +21,8 @@ readonly DATA_ROOT="/srv/thelounge"
 readonly THELOUNGE_HOME="/srv/thelounge/data"
 readonly DEVICE="/dev/sdf"
 readonly INSTANCE_ENV="/etc/thelounge/instance.env"
+readonly APP_WAIT_TRIES=120
+readonly APP_WAIT_SECONDS=5
 
 # Dual-stack EC2/S3 endpoints are reachable over IPv6 with no NAT/IGW; the
 # IPv4-only default endpoints are not. Every `aws` call here, and every
@@ -151,6 +153,15 @@ setup_swap() {
   swapon -a || true
 }
 
+# converge needs jq on its first run; installing it here keeps that run from
+# spending its first seconds on dnf. A failure is logged and swallowed:
+# converge's own ensure_jq retries and fails its tick visibly.
+install_jq() {
+  command -v jq >/dev/null 2>&1 && return 0
+  log "Installing jq..."
+  dnf install -y jq || log "jq install failed; converge will retry"
+}
+
 # dnf-automatic applies security updates unattended on its own timer.
 # Failure here is logged and swallowed, not fatal to boot -- serving The
 # Lounge outranks patching promptness, and the timer retries on its own
@@ -261,7 +272,8 @@ configure_rightsize_timer() {
 
 write_instance_env() {
   # Hands every on-instance script its environment-specific wiring, keeping
-  # the scripts themselves environment-agnostic. Runs LAST: the file's
+  # the scripts themselves environment-agnostic. Runs after the glue the
+  # scripts depend on and before the first converge: the file's
   # existence is the "boot glue done" signal thelounge-health-watchdog and
   # thelounge-rightsize-watchdog block on. Written via rename so nothing
   # ever reads a partial file, and kept in /etc so it survives reboots
@@ -281,10 +293,33 @@ export ARTIFACT_PREFIX=$ARTIFACT_PREFIX
 export DATA_ROOT=$DATA_ROOT
 export THELOUNGE_HOME=$THELOUNGE_HOME
 export ASG_NAME=$ASG_NAME
+export EBS_VOLUME_ID=$EBS_VOLUME_ID
 export RIGHTSIZE_MIN_UPTIME_HOURS=$RIGHTSIZE_MIN_UPTIME_HOURS
 export AWS_USE_DUALSTACK_ENDPOINT=true
 ENV
   mv "$INSTANCE_ENV.tmp" "$INSTANCE_ENV"
+}
+
+# Does not wait for the converge timer's first tick: the release is what the
+# site is waiting on. --no-block returns at once; the converge flock makes a
+# timer tick that overlaps it a no-op.
+start_converge() {
+  log "Starting the first converge..."
+  systemctl start --no-block thelounge-converge.service
+}
+
+# Bounded, and not a failure when it runs out: patching must still be set up
+# if the first converge is slow or failing.
+wait_for_app() {
+  _wait_for_app_i=0
+  while [ "$_wait_for_app_i" -lt "$APP_WAIT_TRIES" ]; do
+    if systemctl is-active --quiet thelounge; then
+      return 0
+    fi
+    _wait_for_app_i=$((_wait_for_app_i + 1))
+    [ "$_wait_for_app_i" -lt "$APP_WAIT_TRIES" ] && sleep "$APP_WAIT_SECONDS"
+  done
+  log "thelounge not active after $((APP_WAIT_TRIES * APP_WAIT_SECONDS))s; continuing"
 }
 
 main() {
@@ -293,11 +328,14 @@ main() {
   mount_data_volume
   setup_swap
   associate_eip
-  enable_security_updates
+  install_jq
   fetch_instance_files
   install_instance_files
   configure_rightsize_timer
   write_instance_env
+  start_converge
+  wait_for_app
+  enable_security_updates
   log "=== user-data complete ==="
 }
 
