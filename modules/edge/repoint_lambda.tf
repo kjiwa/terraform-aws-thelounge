@@ -22,7 +22,7 @@ resource "aws_lambda_function" "repoint" {
   # Dominated by CloudFront's own deploy times (create-VPC-origin then
   # update-distribution) -- see the budget constants in lambda/repoint.py,
   # sized to fit inside this with room to spare.
-  timeout = 870
+  timeout = 900
 
   # No reserved_concurrent_executions: the account's concurrency quota is
   # already at AWS's 10-unreserved floor, so reserving any here isn't
@@ -60,7 +60,7 @@ resource "aws_cloudwatch_log_group" "repoint" {
 # --- trigger ---------------------------------------------------------------
 
 # Two triggers: the instance entering running repoints within seconds, and a
-# slower schedule reconciles whatever that run missed (see lambda/repoint.py).
+# 1-minute schedule reconciles whatever that run missed (see lambda/repoint.py).
 # EC2 state-change events carry no tags, so every instance in the account
 # fires it; the Lambda finds the stack's instance by tag and a run with
 # nothing to change is a handful of reads. Only running, not pending: the
@@ -71,7 +71,7 @@ resource "aws_cloudwatch_event_rule" "repoint" {
 
   name                = "thelounge-repoint"
   description         = "Reconcile the CloudFront VPC origin against the running instance."
-  schedule_expression = "rate(5 minutes)"
+  schedule_expression = "rate(1 minute)"
   state               = var.active ? "ENABLED" : "DISABLED"
 
   tags = {

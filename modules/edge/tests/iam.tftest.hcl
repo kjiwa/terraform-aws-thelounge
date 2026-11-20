@@ -119,7 +119,7 @@ run "repoint_lock_is_scoped_to_its_parameter" {
   }
 }
 
-run "repoint_runs_on_an_instance_running_event_and_a_five_minute_poll" {
+run "repoint_runs_on_an_instance_running_event_and_a_one_minute_poll" {
   command = plan
 
   providers = {
@@ -128,8 +128,8 @@ run "repoint_runs_on_an_instance_running_event_and_a_five_minute_poll" {
   }
 
   assert {
-    condition     = aws_cloudwatch_event_rule.repoint[0].schedule_expression == "rate(5 minutes)"
-    error_message = "The schedule is the safety net and must be slower than the event."
+    condition     = aws_cloudwatch_event_rule.repoint[0].schedule_expression == "rate(1 minute)"
+    error_message = "The schedule is the safety net for a missed event and must stay at one minute."
   }
 
   assert {
