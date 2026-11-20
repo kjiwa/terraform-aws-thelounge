@@ -83,6 +83,14 @@ run "every_edge_owned_behavior_carries_the_security_headers_policy" {
     ])
     error_message = "/status/api must carry the security headers policy."
   }
+
+  assert {
+    condition = anytrue([
+      for b in aws_cloudfront_distribution.this.ordered_cache_behavior :
+      b.path_pattern == "/status/public" && b.response_headers_policy_id == "mock-policy-id"
+    ])
+    error_message = "The status page behaviors must carry the security headers policy: the status module sets no headers."
+  }
 }
 
 run "security_headers_policy_has_the_five_headers" {

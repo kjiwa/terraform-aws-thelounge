@@ -6,7 +6,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ### Added
 
-- A CloudFront response headers policy on the client and `/status/api`: HSTS (one year, no subdomains or preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP. The status page behaviors set their own headers.
+- A CloudFront response headers policy on the client, `/status/api` and the status page behaviors (the status module sets no headers): HSTS (one year, no subdomains or preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP.
 
 ### Upgrade
 
