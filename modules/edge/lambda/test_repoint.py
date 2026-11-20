@@ -2,6 +2,7 @@ import copy
 import datetime
 import pathlib
 import re
+import time
 
 import pytest
 
@@ -29,9 +30,14 @@ class ParameterNotFound(Exception):
     pass
 
 
+class ParameterAlreadyExists(Exception):
+    pass
+
+
 class FakeSsm:
     class exceptions:
         ParameterNotFound = ParameterNotFound
+        ParameterAlreadyExists = ParameterAlreadyExists
 
     def __init__(self, values):
         self.values = dict(values)
@@ -43,9 +49,17 @@ class FakeSsm:
         return {"Parameter": {"Value": self.values[Name]}}
 
     def put_parameter(self, Name, Value, Type, Overwrite):
-        assert Type == "String" and Overwrite
+        assert Type == "String"
+        if not Overwrite and Name in self.values:
+            raise ParameterAlreadyExists()
         self.values[Name] = Value
-        self.puts.append((Name, Value))
+        if Name not in (LOCK, PENDING):
+            self.puts.append((Name, Value))
+
+    def delete_parameter(self, Name):
+        if Name not in self.values:
+            raise ParameterNotFound()
+        del self.values[Name]
 
 
 class FakeCloudFront:
@@ -145,6 +159,8 @@ def install(monkeypatch, repoint, cloudfront, ssm):
 
 CHAT = "/thelounge/edge/vpc-origin/chat"
 STATUS = "/thelounge/edge/vpc-origin/status"
+LOCK = "/thelounge/edge/repoint-lock"
+PENDING = "/thelounge/edge/repoint-pending"
 
 
 def test_publishes_new_ids_after_repoint(monkeypatch, repoint):
@@ -315,3 +331,136 @@ def test_instance_without_a_private_dns_name_still_repoints_and_keeps_domains(
         o["VpcOriginConfig"]["VpcOriginId"]
         for o in cloudfront.config["Origins"]["Items"]
     ] == ["vo_new_thelounge-i-0abc", "vo_new_thelounge-i-0abc-status"]
+
+
+def replacement(monkeypatch, repoint, ssm):
+    cloudfront = FakeCloudFront(
+        "vo_old_chat",
+        "vo_old_status",
+        "arn:aws:ec2:us-east-1:123456789012:instance/i-0old",
+        instance="i-0old",
+        domain="ip-10-20-0-198.ec2.internal",
+    )
+    install(monkeypatch, repoint, cloudfront, ssm)
+    return cloudfront
+
+
+def held_until(seconds_from_now):
+    return f"{time.time() + seconds_from_now:.0f} someone-else"
+
+
+def test_overlapping_invocations_update_the_distribution_once(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+    create = cloudfront.create_vpc_origin
+    overlapping = []
+    firing = []
+
+    def create_while_a_tick_fires(VpcOriginEndpointConfig):
+        # The next scheduled invocation starts while this one waits on CloudFront.
+        if not firing:
+            firing.append(True)
+            overlapping.append(repoint.handler({}, None))
+            firing.clear()
+        return create(VpcOriginEndpointConfig)
+
+    cloudfront.create_vpc_origin = create_while_a_tick_fires
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 1
+    assert overlapping == [None, None]
+    assert LOCK not in ssm.values
+    assert PENDING not in ssm.values
+
+
+def test_event_during_a_run_gets_exactly_one_more_pass(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+    passes = []
+    reconcile = repoint._reconcile
+    monkeypatch.setattr(
+        repoint, "_reconcile", lambda: (passes.append(1), reconcile())[1]
+    )
+    create = cloudfront.create_vpc_origin
+    fired = []
+
+    def create_while_an_event_fires(VpcOriginEndpointConfig):
+        if not fired:
+            fired.append(True)
+            repoint.handler({}, None)
+        return create(VpcOriginEndpointConfig)
+
+    cloudfront.create_vpc_origin = create_while_an_event_fires
+
+    repoint.handler({}, None)
+
+    assert len(passes) == 2
+    assert cloudfront.updates == 1
+
+
+def test_a_run_nobody_interrupted_makes_one_pass(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    replacement(monkeypatch, repoint, ssm)
+    passes = []
+    reconcile = repoint._reconcile
+    monkeypatch.setattr(
+        repoint, "_reconcile", lambda: (passes.append(1), reconcile())[1]
+    )
+
+    repoint.handler({}, None)
+
+    assert len(passes) == 1
+
+
+def test_invocation_exits_while_another_holds_the_lock(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status", LOCK: held_until(60)})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 0
+    assert ssm.values[LOCK].endswith("someone-else")
+    assert PENDING in ssm.values
+
+
+def test_invocation_takes_over_an_expired_lock(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status", LOCK: held_until(-1)})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+
+    repoint.handler({}, None)
+
+    assert cloudfront.updates == 1
+    assert LOCK not in ssm.values
+
+
+def test_lock_is_released_when_the_run_fails(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+
+    def fail(**kwargs):
+        raise RuntimeError("boom")
+
+    cloudfront.update_distribution = fail
+
+    with pytest.raises(RuntimeError):
+        repoint.handler({}, None)
+
+    assert LOCK not in ssm.values
+
+
+def test_lock_is_released_without_a_running_instance(monkeypatch, repoint):
+    ssm = FakeSsm({})
+    install(monkeypatch, repoint, FakeCloudFront("a", "b", ARN), ssm)
+    monkeypatch.setattr(repoint, "_running_instance", lambda: None)
+
+    repoint.handler({}, None)
+
+    assert LOCK not in ssm.values
+
+
+def test_lock_outlives_the_lambda_timeout(repoint):
+    tf = pathlib.Path(__file__).parent.parent.joinpath("repoint_lambda.tf").read_text()
+    timeout = int(re.search(r"^\s*timeout\s*=\s*(\d+)", tf, re.MULTILINE).group(1))
+
+    assert repoint.LOCK_TTL_SECONDS > timeout

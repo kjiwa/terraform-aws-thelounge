@@ -71,7 +71,7 @@ scripts/azmove.sh --root <root> finish https://<your-chat-hostname>/
 
 Scales the ASG back to 1, waits for an InService instance, and, if you pass a URL, polls it until healthy. There is no deploy step: the new instance's `thelounge-converge.timer` fires within a few minutes of boot and pulls the last-built release, so allow a few minutes before the health poll succeeds. The instance attaches the restored volume, finds the existing filesystem by NVMe controller serial, and mounts the data.
 
-Reaching the new instance is automatic. By default (zero IPv4) the edge module's repoint Lambda reconciles the CloudFront VPC origin against the running instance every minute; allow up to a minute plus CloudFront's deploy time. With `enable_public_ipv4 = true`, user-data associates the Elastic IP with the new instance at boot.
+Reaching the new instance is automatic. By default (zero IPv4) the edge module's repoint Lambda reconciles the CloudFront VPC origin against the running instance when an instance enters running, and every 5 minutes as a safety net; allow CloudFront's deploy time. With `enable_public_ipv4 = true`, user-data associates the Elastic IP with the new instance at boot.
 
 ## Step 6: clean up (manual)
 

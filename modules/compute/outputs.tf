@@ -17,3 +17,13 @@ output "instance_role_arn" {
   description = "IAM role ARN attached to EC2 instances. Modules granting the instance additional read access (e.g. the delivery pipeline's artifact bucket) attach their grants to it."
   value       = aws_iam_role.instance.arn
 }
+
+output "launch_template_ids" {
+  description = "Launch template ID per architecture."
+  value       = { for architecture, template in aws_launch_template.this : architecture => template.id }
+}
+
+output "refresh_preferences" {
+  description = "Healthy percentages of the group's instance refresh."
+  value       = local.refresh_preferences
+}

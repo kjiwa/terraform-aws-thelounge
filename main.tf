@@ -94,6 +94,23 @@ module "monitoring" {
   disk_alarm_used_percent = var.disk_alarm_used_percent
 }
 
+# Not with ami_ids: a pin is the operator's, so nothing may move it.
+module "ami_updater" {
+  count  = var.ami_ids == null ? 1 : 0
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/ami-updater?ref=v0.4.0"
+
+  name_prefix         = "thelounge-${var.env}"
+  asg_name            = module.compute.asg_name
+  launch_template_ids = module.compute.launch_template_ids
+  instance_role_arns  = [module.compute.instance_role_arn]
+  ami_max_age_days    = var.ami_max_age_days
+  alarm_topic_arn     = module.monitoring.ops_topic_arn
+
+  # The group's instance_refresh, so a forced refresh is the same in-place
+  # replacement; the updater holds back while the site is down.
+  refresh_preferences = merge(module.compute.refresh_preferences, { alarm_names = module.monitoring.outage_alarm_names })
+}
+
 # Authenticated operational status page at /status (see the status variable).
 module "status" {
   source = "./modules/status"

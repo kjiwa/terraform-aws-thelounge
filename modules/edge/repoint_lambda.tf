@@ -26,10 +26,8 @@ resource "aws_lambda_function" "repoint" {
 
   # No reserved_concurrent_executions: the account's concurrency quota is
   # already at AWS's 10-unreserved floor, so reserving any here isn't
-  # possible without a quota increase. An overlapping run (this one still
-  # mid-repoint when the next tick fires) is self-limiting instead: the
-  # loser's create_vpc_origin hits EntityAlreadyExists, the invocation
-  # errors, and the next tick's idempotent fast path cleans it up.
+  # possible without a quota increase. Runs serialize on an SSM parameter
+  # lock instead (lambda/repoint.py).
 
   # The schedule can invoke within seconds of creation; without this the
   # runtime auto-creates the log group first and Terraform's create conflicts.
@@ -61,15 +59,19 @@ resource "aws_cloudwatch_log_group" "repoint" {
 
 # --- trigger ---------------------------------------------------------------
 
-# Reconcile on a schedule rather than react to a launch event: see the
-# module docstring in lambda/repoint.py for why. Mirrors the availability
-# module's schedule (modules/availability/lambda.tf in terraform-aws-status-page).
+# Two triggers: the instance entering running repoints within seconds, and a
+# slower schedule reconciles whatever that run missed (see lambda/repoint.py).
+# EC2 state-change events carry no tags, so every instance in the account
+# fires it; the Lambda finds the stack's instance by tag and a run with
+# nothing to change is a handful of reads. Only running, not pending: the
+# Lambda considers running instances only, so a pending invocation would
+# exit having done nothing.
 resource "aws_cloudwatch_event_rule" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 
   name                = "thelounge-repoint"
   description         = "Reconcile the CloudFront VPC origin against the running instance."
-  schedule_expression = "rate(1 minute)"
+  schedule_expression = "rate(5 minutes)"
   state               = var.active ? "ENABLED" : "DISABLED"
 
   tags = {
@@ -85,6 +87,32 @@ resource "aws_cloudwatch_event_target" "repoint" {
   arn       = aws_lambda_function.repoint[0].arn
 }
 
+resource "aws_cloudwatch_event_rule" "repoint_instance_running" {
+  count = var.enable_public_ipv4 ? 0 : 1
+
+  name        = "thelounge-repoint-instance-running"
+  description = "Repoint the CloudFront VPC origin as soon as an instance is running."
+  state       = var.active ? "ENABLED" : "DISABLED"
+
+  event_pattern = jsonencode({
+    source        = ["aws.ec2"]
+    "detail-type" = ["EC2 Instance State-change Notification"]
+    detail        = { state = ["running"] }
+  })
+
+  tags = {
+    Name = "thelounge-repoint-instance-running"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "repoint_instance_running" {
+  count = var.enable_public_ipv4 ? 0 : 1
+
+  rule      = aws_cloudwatch_event_rule.repoint_instance_running[0].name
+  target_id = "repoint-lambda"
+  arn       = aws_lambda_function.repoint[0].arn
+}
+
 resource "aws_lambda_permission" "repoint" {
   count = var.enable_public_ipv4 ? 0 : 1
 
@@ -93,6 +121,16 @@ resource "aws_lambda_permission" "repoint" {
   function_name = aws_lambda_function.repoint[0].function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.repoint[0].arn
+}
+
+resource "aws_lambda_permission" "repoint_instance_running" {
+  count = var.enable_public_ipv4 ? 0 : 1
+
+  statement_id  = "AllowRepointInstanceRunningRule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.repoint[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.repoint_instance_running[0].arn
 }
 
 # --- IAM ---------------------------------------------------------------------
@@ -170,6 +208,16 @@ data "aws_iam_policy_document" "repoint" {
     resources = [
       aws_ssm_parameter.vpc_origin_chat[0].arn,
       aws_ssm_parameter.vpc_origin_status[0].arn,
+    ]
+  }
+
+  statement {
+    sid     = "RepointLock"
+    effect  = "Allow"
+    actions = ["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/thelounge/edge/repoint-lock",
+      "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/thelounge/edge/repoint-pending",
     ]
   }
 

@@ -85,3 +85,25 @@ run "instance_env_exports_the_asg_name" {
     error_message = "user_data must export ASG_NAME (the ASG's name) through instance.env for the rightsize check."
   }
 }
+
+run "instance_may_mark_only_its_own_group_unhealthy" {
+  command = plan
+
+  assert {
+    condition = anytrue([
+      for s in data.aws_iam_policy_document.instance.statement :
+      contains(s.actions, "autoscaling:SetInstanceHealth") && s.effect == "Allow"
+      && s.resources == toset(["arn:aws:autoscaling:us-east-1:123456789012:autoScalingGroup:*:autoScalingGroupName/thelounge-prod"])
+    ])
+    error_message = "The spot drain marks the instance Unhealthy; SetInstanceHealth must be scoped to this stack's group."
+  }
+}
+
+run "instance_env_exports_the_data_volume_id" {
+  command = plan
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.this["arm64"].user_data), "export EBS_VOLUME_ID=$EBS_VOLUME_ID")
+    error_message = "The spot drain detaches the data volume by the ID instance.env exports."
+  }
+}

@@ -11,7 +11,7 @@ resource "aws_launch_template" "this" {
   # shared fields never collides the two templates' names. Tell them apart
   # by architecture/image_id in the console.
   name_prefix   = "${local.name_env}-"
-  image_id      = local.ami_ids[each.key]
+  image_id      = var.ami_ids == null ? data.aws_ssm_parameter.al2023[each.key].insecure_value : var.ami_ids[each.key]
   ebs_optimized = true
 
   iam_instance_profile {
@@ -85,5 +85,7 @@ resource "aws_launch_template" "this" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [image_id]
+    replace_triggered_by  = [terraform_data.image_pin]
   }
 }

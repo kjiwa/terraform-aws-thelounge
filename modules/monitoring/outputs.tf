@@ -12,3 +12,8 @@ output "spot_interruptions_log_group_name" {
   description = "Log group holding raw Spot interruption warnings. Read by modules/status."
   value       = module.availability.spot_interruptions_log_group_name
 }
+
+output "outage_alarm_names" {
+  description = "Alarms that fire while the site is down; the AMI updater does not start a refresh while one is in ALARM."
+  value       = [module.availability.site_down_alarm_name]
+}

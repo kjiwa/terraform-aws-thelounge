@@ -417,3 +417,71 @@ run "config_objects_ship_the_vendored_rightsize_check" {
     error_message = "The vendored keel rightsize check must ship in config_objects so converge installs it as keel-rightsize-check."
   }
 }
+
+run "unpinned_runs_the_ami_updater" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  assert {
+    condition     = length(module.ami_updater) == 1
+    error_message = "ami_ids = null must run the AMI updater."
+  }
+}
+
+run "pinned_runs_no_ami_updater" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ami_ids = { arm64 = "ami-0123456789abcdef0", x86_64 = "ami-0123456789abcdef0" }
+  }
+
+  assert {
+    condition     = length(module.ami_updater) == 0
+    error_message = "A pin must not run the AMI updater."
+  }
+}
+
+run "rejects_negative_ami_max_age" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ami_max_age_days = -1
+  }
+
+  expect_failures = [var.ami_max_age_days]
+}
+
+run "rejects_a_data_volume_outside_the_gp3_range" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    data_volume_size_gb = 0
+  }
+
+  expect_failures = [var.data_volume_size_gb]
+}
+
+run "rejects_a_fractional_data_volume" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    data_volume_size_gb = 8.5
+  }
+
+  expect_failures = [var.data_volume_size_gb]
+}

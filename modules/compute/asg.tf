@@ -116,7 +116,8 @@ resource "aws_autoscaling_group" "this" {
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 0
+      min_healthy_percentage = local.refresh_preferences.min_healthy_percentage
+      max_healthy_percentage = local.refresh_preferences.max_healthy_percentage
     }
   }
 }
