@@ -110,9 +110,12 @@ run "repoint_lock_is_scoped_to_its_parameter" {
     condition = anytrue([
       for s in data.aws_iam_policy_document.repoint[0].statement :
       s.actions == toset(["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"])
-      && s.resources == toset(["arn:aws:ssm:us-east-1:123456789012:parameter/thelounge/edge/repoint-lock"])
+      && s.resources == toset([
+        "arn:aws:ssm:us-east-1:123456789012:parameter/thelounge/edge/repoint-lock",
+        "arn:aws:ssm:us-east-1:123456789012:parameter/thelounge/edge/repoint-pending",
+      ])
     ])
-    error_message = "Delete and Put/GetParameter on the lock must be scoped to the lock parameter."
+    error_message = "Delete and Put/GetParameter on the lock must be scoped to the lock and pending parameters."
   }
 }
 

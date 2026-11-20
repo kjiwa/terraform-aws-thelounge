@@ -1,6 +1,7 @@
-# user_data starts the first converge itself once instance.env exists; this
-# timer's first tick is a fallback 5 minutes after it starts, and it repeats
-# every 5 minutes after each run -- frequent enough that a fresh build or a
+# user_data starts the first converge itself once instance.env exists. The
+# timer's first tick, 2 minutes after boot, is the fallback and what recovers
+# a plain reboot, which user_data does not rerun; overlapping the first
+# converge is harmless (flock). It repeats every 5 minutes after each run -- frequent enough that a fresh build or a
 # config change reaches a running instance quickly, without a no-op tick (a
 # handful of S3 HEAD/GET calls) costing anything worth avoiding. No
 # Persistent=: the instance is always on, and a missed tick is caught by the
@@ -9,7 +10,7 @@
 Description=Run thelounge converge
 
 [Timer]
-OnActiveSec=5min
+OnBootSec=2min
 OnUnitActiveSec=5min
 AccuracySec=15
 

@@ -53,7 +53,7 @@ class FakeSsm:
         if not Overwrite and Name in self.values:
             raise ParameterAlreadyExists()
         self.values[Name] = Value
-        if Name != LOCK:
+        if Name not in (LOCK, PENDING):
             self.puts.append((Name, Value))
 
     def delete_parameter(self, Name):
@@ -160,6 +160,7 @@ def install(monkeypatch, repoint, cloudfront, ssm):
 CHAT = "/thelounge/edge/vpc-origin/chat"
 STATUS = "/thelounge/edge/vpc-origin/status"
 LOCK = "/thelounge/edge/repoint-lock"
+PENDING = "/thelounge/edge/repoint-pending"
 
 
 def test_publishes_new_ids_after_repoint(monkeypatch, repoint):
@@ -370,6 +371,46 @@ def test_overlapping_invocations_update_the_distribution_once(monkeypatch, repoi
     assert cloudfront.updates == 1
     assert overlapping == [None, None]
     assert LOCK not in ssm.values
+    assert PENDING not in ssm.values
+
+
+def test_event_during_a_run_gets_exactly_one_more_pass(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+    passes = []
+    reconcile = repoint._reconcile
+    monkeypatch.setattr(
+        repoint, "_reconcile", lambda: (passes.append(1), reconcile())[1]
+    )
+    create = cloudfront.create_vpc_origin
+    fired = []
+
+    def create_while_an_event_fires(VpcOriginEndpointConfig):
+        if not fired:
+            fired.append(True)
+            repoint.handler({}, None)
+        return create(VpcOriginEndpointConfig)
+
+    cloudfront.create_vpc_origin = create_while_an_event_fires
+
+    repoint.handler({}, None)
+
+    assert len(passes) == 2
+    assert cloudfront.updates == 1
+
+
+def test_a_run_nobody_interrupted_makes_one_pass(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    replacement(monkeypatch, repoint, ssm)
+    passes = []
+    reconcile = repoint._reconcile
+    monkeypatch.setattr(
+        repoint, "_reconcile", lambda: (passes.append(1), reconcile())[1]
+    )
+
+    repoint.handler({}, None)
+
+    assert len(passes) == 1
 
 
 def test_invocation_exits_while_another_holds_the_lock(monkeypatch, repoint):
@@ -380,6 +421,7 @@ def test_invocation_exits_while_another_holds_the_lock(monkeypatch, repoint):
 
     assert cloudfront.updates == 0
     assert ssm.values[LOCK].endswith("someone-else")
+    assert PENDING in ssm.values
 
 
 def test_invocation_takes_over_an_expired_lock(monkeypatch, repoint):

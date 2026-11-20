@@ -15,7 +15,8 @@ run is cheap when nothing has changed (a handful of read-only calls).
 Runs are serialized by a lock (see _acquire_lock): a run takes minutes, so
 without it every trigger that fires meanwhile repeats the same repoint and
 races it on UpdateDistribution (PreconditionFailed). A trigger that finds the
-lock held exits; the schedule picks up whatever the holder did not cover.
+lock held leaves a pending mark and exits; the holder makes one more pass
+before releasing, and the schedule covers anything else.
 
 CloudFront's UpdateVpcOrigin refuses to change a VPC origin's target ARN
 while any distribution still references that origin
@@ -104,6 +105,11 @@ POLL_INTERVAL_SECONDS = 5
 # run's lock expires on its own.
 LOCK_PARAMETER = "/thelounge/edge/repoint-lock"
 LOCK_TTL_SECONDS = 900
+
+# Set by a run that finds the lock held, so the holder makes one more pass
+# before releasing: the event that run carried (a replacement entering
+# running) may have arrived after the holder looked at the instance.
+PENDING_PARAMETER = "/thelounge/edge/repoint-pending"
 
 # An unreferenced origin younger than this may belong to a concurrent run
 # that has not attached it yet, so the sweep leaves it alone. Exceeds the
@@ -427,13 +433,31 @@ def _release_lock(value):
         pass
 
 
+def _mark_pending():
+    ssm.put_parameter(
+        Name=PENDING_PARAMETER, Value=_lock_value(), Type="String", Overwrite=True
+    )
+
+
+def _take_pending():
+    try:
+        ssm.delete_parameter(Name=PENDING_PARAMETER)
+    except ssm.exceptions.ParameterNotFound:
+        return False
+    return True
+
+
 def handler(event, context):
     lock = _acquire_lock()
     if lock is None:
+        _mark_pending()
         print(json.dumps({"action": "lock-held"}))
         return
     try:
         _reconcile()
+        if _take_pending():
+            print(json.dumps({"action": "pending-pass"}))
+            _reconcile()
     finally:
         _release_lock(lock)
 

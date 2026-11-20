@@ -300,9 +300,9 @@ ENV
   mv "$INSTANCE_ENV.tmp" "$INSTANCE_ENV"
 }
 
-# Does not wait for the converge timer's first tick: the release is what the
-# site is waiting on. --no-block returns at once; the converge flock makes a
-# timer tick that overlaps it a no-op.
+# Does not wait for the converge timer's first tick: the release is what
+# the site is waiting on. --no-block returns at once, and the converge flock
+# makes a timer tick that overlaps it a no-op.
 start_converge() {
   log "Starting the first converge..."
   systemctl start --no-block thelounge-converge.service

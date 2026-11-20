@@ -42,7 +42,7 @@ variable "zone_id" {
 }
 
 variable "spot_enabled" {
-  description = "If true, the ASG uses Spot exclusively: a large discount off On-Demand, at the cost of frequent reclaim outages (one a day was typical, 5-10 minutes each from reclaim until the site serves again, in the availability-episodes log) and interruption emails. Default on here (the compute module itself defaults off) since the discount is worth it for a single instance."
+  description = "If true, the ASG uses Spot exclusively: a large discount off On-Demand, at the cost of frequent reclaim outages (one a day was typical, about 7 to 8 minutes each from the notice until the site serves again, measured in the availability-episodes log before v2.1.0; about 5 minutes expected since, derived and not yet measured, floored by the CloudFront origin chain) and interruption emails. Default on here (the compute module itself defaults off) since the discount is worth it for a single instance."
   type        = bool
   default     = true
 }

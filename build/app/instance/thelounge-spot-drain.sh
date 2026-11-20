@@ -41,27 +41,30 @@ stop_app() {
   sync
 }
 
-# The status service holds the volume open, and the timers would read the
-# vacated mountpoint as the root filesystem or an unhealthy app.
+# The status service holds the volume open, the health and disk timers would
+# read the vacated mountpoint as the root filesystem or an unhealthy app, and
+# converge would re-enable the disk timer and write to the mount.
 detach_data_volume() {
   if [ -z "${EBS_VOLUME_ID:-}" ]; then
     log "no EBS_VOLUME_ID; nothing to detach"
     return 0
   fi
   systemctl stop thelounge-status.service thelounge-health-watchdog.timer \
-    thelounge-disk-metric.timer || log "stopping the volume's readers failed; continuing"
+    thelounge-disk-metric.timer thelounge-converge.timer thelounge-converge.service || log "stopping the volume's readers failed; continuing"
   umount "$DATA_ROOT" || log "umount $DATA_ROOT failed; continuing"
   aws ec2 detach-volume --volume-id "$EBS_VOLUME_ID" --region "$REGION" ||
     log "detach-volume failed; the replacement waits for termination"
 }
 
+# The group sets no health check grace period, so the 300 s default would make
+# this call a silent no-op in the first 5 minutes after launch.
 set_unhealthy() {
   _set_unhealthy_token="$(imds_token)"
   _set_unhealthy_id="$(curl -sf -m 2 -H "X-aws-ec2-metadata-token: $_set_unhealthy_token" \
     "$IMDS/meta-data/instance-id")"
   log "Marking $_set_unhealthy_id Unhealthy in the ASG..."
   aws autoscaling set-instance-health --instance-id "$_set_unhealthy_id" \
-    --health-status Unhealthy --region "$REGION"
+    --health-status Unhealthy --no-should-respect-grace-period --region "$REGION"
 }
 
 drain() {

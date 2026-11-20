@@ -65,10 +65,10 @@ DATA_ROOT=/srv/thelounge'
 
 readonly DRAIN_CALLS='systemctl stop thelounge
 sync
-systemctl stop thelounge-status.service thelounge-health-watchdog.timer thelounge-disk-metric.timer
+systemctl stop thelounge-status.service thelounge-health-watchdog.timer thelounge-disk-metric.timer thelounge-converge.timer thelounge-converge.service
 umount /srv/thelounge
 aws ec2 detach-volume --volume-id vol-0123456789abcdef0 --region eu-west-1
-aws autoscaling set-instance-health --instance-id i-0123456789abcdef0 --health-status Unhealthy --region eu-west-1'
+aws autoscaling set-instance-health --instance-id i-0123456789abcdef0 --health-status Unhealthy --no-should-respect-grace-period --region eu-west-1'
 
 test_notice_stops_detaches_then_marks_unhealthy() {
   assert_eq "exit status" "exit=0" "$(QUIET_POLLS=0 run_script "$FULL_ENV")"
@@ -105,7 +105,7 @@ STUB
 
 test_failed_detach_still_marks_unhealthy() {
   assert_eq "exit status" "exit=0" "$(DETACH_FAILS=1 UMOUNT_FAILS=1 run_script "$FULL_ENV")"
-  assert_eq "unhealthy still set" "aws autoscaling set-instance-health --instance-id i-0123456789abcdef0 --health-status Unhealthy --region eu-west-1" "$(tail -n 1 "$CALLS")"
+  assert_eq "unhealthy still set" "aws autoscaling set-instance-health --instance-id i-0123456789abcdef0 --health-status Unhealthy --no-should-respect-grace-period --region eu-west-1" "$(tail -n 1 "$CALLS")"
 }
 
 test_failed_stop_still_detaches_and_marks_unhealthy() {

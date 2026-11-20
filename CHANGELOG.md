@@ -10,7 +10,7 @@ Upgrading with `ami_ids` null: the first plan adds the AMI updater (Lambda, role
 
 - The keel `ami-updater` module (v0.4.0) runs when `ami_ids` is null. It writes a launch template version for each new Amazon Linux 2023 release once it is a day old and points the group at it; it replaces the instance only when the running AMI is over `ami_max_age_days` (new, default 14) old, with the group's refresh settings, and not while the site-down alarm fires. Its alarms notify the ops topic.
 - Compute outputs `launch_template_ids` and `refresh_preferences`; monitoring output `outage_alarm_names`.
-- The Spot drain, at the 2-minute notice, stops The Lounge, detaches the data volume and marks the instance Unhealthy, so the replacement launches at the notice instead of after EC2 terminates the instance. The instance policy gains `autoscaling:SetInstanceHealth` on the group, and `instance.env` exports `EBS_VOLUME_ID`.
+- The Spot drain, at the 2-minute notice, stops The Lounge and converge, detaches the data volume and marks the instance Unhealthy without waiting out the health check grace period, so the replacement launches at the notice instead of after EC2 terminates the instance. The instance policy gains `autoscaling:SetInstanceHealth` on the group, and `instance.env` exports `EBS_VOLUME_ID`.
 - The repoint Lambda runs on an EventBridge rule for an instance entering `running`, so the CloudFront VPC origin follows a replacement within seconds instead of at the next poll.
 - `data_volume_size_gb` is validated as a whole number from 1 to 16384.
 
@@ -18,9 +18,9 @@ Upgrading with `ami_ids` null: the first plan adds the AMI updater (Lambda, role
 
 - The launch templates ignore `image_id`, so Terraform leaves the updater's versions alone; `terraform_data.image_pin` replaces the templates when `ami_ids` changes. The images are read from SSM only when `ami_ids` is null.
 - `ami_ids` pins have no updater and no longer warn on every plan; the stale-pin `check` is removed.
-- Repoint runs serialize on an SSM parameter lock (`/thelounge/edge/repoint-lock`), so overlapping runs no longer race on `UpdateDistribution`. The repoint role gains Get, Put and DeleteParameter on it.
+- Repoint runs serialize on an SSM parameter lock (`/thelounge/edge/repoint-lock`), so overlapping runs no longer race on `UpdateDistribution`. A run that finds the lock held leaves a pending mark (`/thelounge/edge/repoint-pending`), and the holder makes one more pass before releasing, so an event during a run is not lost. The repoint role gains Get, Put and DeleteParameter on both.
 - The repoint schedule is every 5 minutes, a safety net behind the event rule.
-- `user_data` installs `jq` before fetching the instance files, starts the first converge as soon as `instance.env` exists instead of waiting for the timer, and installs `dnf-automatic` once the app is up (or after 10 minutes). The converge timer's first tick is a fallback 5 minutes after it starts.
+- `user_data` installs `jq` before fetching the instance files, starts the first converge as soon as `instance.env` exists instead of waiting for the timer, and installs `dnf-automatic` once the app is up (or after 10 minutes). The converge timer keeps its 2-minute first tick as the fallback and for a plain reboot.
 - The `active` description states the sleeping cost, and the `data_volume_size_gb` description that EBS cannot shrink.
 - Status-page modules v0.7.0 to v0.8.0.
 - Terraform floors align with the sibling modules: aws provider `>= 6.45`, Terraform `>= 1.15` in every module.

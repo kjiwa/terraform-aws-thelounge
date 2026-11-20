@@ -212,10 +212,13 @@ data "aws_iam_policy_document" "repoint" {
   }
 
   statement {
-    sid       = "RepointLock"
-    effect    = "Allow"
-    actions   = ["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"]
-    resources = ["arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/thelounge/edge/repoint-lock"]
+    sid     = "RepointLock"
+    effect  = "Allow"
+    actions = ["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/thelounge/edge/repoint-lock",
+      "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/thelounge/edge/repoint-pending",
+    ]
   }
 
   statement {
