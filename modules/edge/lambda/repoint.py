@@ -6,12 +6,16 @@ mechanism of its own for following a replacement instance. This is the
 zero-IPv4 stand-in for the EIP re-association a user_data script would do if
 the instance still had a public IP to reassign.
 
-Runs on a 1-minute schedule (repoint_lambda.tf) rather than reacting to the
-ASG's launch event: a scheduled reconcile self-heals from any failure on the
-next tick, where a one-shot event handler leaves the distribution stuck on a
-dead origin until the next instance replacement. Each run is cheap when
-nothing has changed (a handful of read-only calls) and idempotent under
-overlapping retries.
+Triggered by the instance's launch event for a fast repoint, and by a
+5-minute schedule (repoint_lambda.tf) that self-heals from any failure the
+event run left behind: a one-shot event handler alone would leave the
+distribution stuck on a dead origin until the next instance replacement. Each
+run is cheap when nothing has changed (a handful of read-only calls).
+
+Runs are serialized by a lock (see _acquire_lock): a run takes minutes, so
+without it every trigger that fires meanwhile repeats the same repoint and
+races it on UpdateDistribution (PreconditionFailed). A trigger that finds the
+lock held exits; the schedule picks up whatever the holder did not cover.
 
 CloudFront's UpdateVpcOrigin refuses to change a VPC origin's target ARN
 while any distribution still references that origin
@@ -76,6 +80,7 @@ import datetime
 import json
 import os
 import time
+import uuid
 
 import boto3
 
@@ -93,6 +98,12 @@ DISTRIBUTION_ID = os.environ["DISTRIBUTION_ID"]
 VPC_ORIGIN_DEPLOY_BUDGET_SECONDS = 300
 DISTRIBUTION_DEPLOY_BUDGET_SECONDS = 240
 POLL_INTERVAL_SECONDS = 5
+
+# Longer than the Lambda's timeout (repoint_lambda.tf; test_repoint.py asserts
+# it), so a held lock always belongs to a live run or a dead one, and a dead
+# run's lock expires on its own.
+LOCK_PARAMETER = "/thelounge/edge/repoint-lock"
+LOCK_TTL_SECONDS = 900
 
 # An unreferenced origin younger than this may belong to a concurrent run
 # that has not attached it yet, so the sweep leaves it alone. Exceeds the
@@ -371,7 +382,63 @@ def _publish_vpc_origin_ids(resolved):
             )
 
 
+def _lock_value():
+    return f"{time.time() + LOCK_TTL_SECONDS:.0f} {uuid.uuid4().hex}"
+
+
+def _lock_expired():
+    try:
+        held = ssm.get_parameter(Name=LOCK_PARAMETER)["Parameter"]["Value"]
+    except ssm.exceptions.ParameterNotFound:
+        return True
+    return float(held.split()[0]) <= time.time()
+
+
+def _acquire_lock():
+    """Return this run's lock value, or None if another run holds the lock.
+
+    An SSM parameter has no conditional write other than Overwrite=False,
+    which makes creating it atomic. Taking over an expired lock (a run that
+    died holding it) is a last-writer-wins overwrite confirmed by reading it
+    back; that race needs two runs to start after the same expiry, and a lost
+    one only repeats the idempotent reconcile.
+    """
+    value = _lock_value()
+    try:
+        ssm.put_parameter(
+            Name=LOCK_PARAMETER, Value=value, Type="String", Overwrite=False
+        )
+        return value
+    except ssm.exceptions.ParameterAlreadyExists:
+        pass
+    if not _lock_expired():
+        return None
+    ssm.put_parameter(Name=LOCK_PARAMETER, Value=value, Type="String", Overwrite=True)
+    held = ssm.get_parameter(Name=LOCK_PARAMETER)["Parameter"]["Value"]
+    return value if held == value else None
+
+
+def _release_lock(value):
+    try:
+        held = ssm.get_parameter(Name=LOCK_PARAMETER)["Parameter"]["Value"]
+        if held == value:
+            ssm.delete_parameter(Name=LOCK_PARAMETER)
+    except ssm.exceptions.ParameterNotFound:
+        pass
+
+
 def handler(event, context):
+    lock = _acquire_lock()
+    if lock is None:
+        print(json.dumps({"action": "lock-held"}))
+        return
+    try:
+        _reconcile()
+    finally:
+        _release_lock(lock)
+
+
+def _reconcile():
     instance = _running_instance()
     if instance is None:
         print(json.dumps({"action": "no-running-instance"}))

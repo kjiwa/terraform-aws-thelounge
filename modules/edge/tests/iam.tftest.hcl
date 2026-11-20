@@ -97,3 +97,45 @@ run "only_create_and_list_vpc_origins_take_a_wildcard" {
     error_message = "Create/ListVpcOrigins take no resource and belong alone on *."
   }
 }
+
+run "repoint_lock_is_scoped_to_its_parameter" {
+  command = plan
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  assert {
+    condition = anytrue([
+      for s in data.aws_iam_policy_document.repoint[0].statement :
+      s.actions == toset(["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"])
+      && s.resources == toset(["arn:aws:ssm:us-east-1:123456789012:parameter/thelounge/edge/repoint-lock"])
+    ])
+    error_message = "Delete and Put/GetParameter on the lock must be scoped to the lock parameter."
+  }
+}
+
+run "repoint_runs_on_an_instance_running_event_and_a_five_minute_poll" {
+  command = plan
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  assert {
+    condition     = aws_cloudwatch_event_rule.repoint[0].schedule_expression == "rate(5 minutes)"
+    error_message = "The schedule is the safety net and must be slower than the event."
+  }
+
+  assert {
+    condition     = jsondecode(aws_cloudwatch_event_rule.repoint_instance_running[0].event_pattern).detail.state == ["running"]
+    error_message = "The event rule must fire when an instance enters running."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_event_target.repoint_instance_running[0].arn == aws_lambda_function.repoint[0].arn
+    error_message = "The event rule must invoke the repoint Lambda."
+  }
+}
