@@ -2,6 +2,18 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.1.1] - 2026-11-20
+
+### Fixed
+
+- The repoint Lambda no longer gives up when the instance-running event fires before the instance appears in `DescribeInstances`. In v2.1.0 that run logged `no-running-instance` and exited, and the next run was the 5-minute poll, so the first replacement left the site unreachable for about 9 minutes. An event-triggered run now looks again every 5 seconds for up to 90 seconds.
+- The repoint poll is back to every minute, so a missed event costs at most a minute instead of five.
+- The repoint Lambda's timeout is 900 s, its VPC origin deploy wait 270 s, and the lock and sweep grace 960 s, so the lookup wait fits inside the timeout.
+
+### Upgrade
+
+- `terraform init -upgrade`, then plan. The plan changes only the repoint Lambda and rule. It changes no launch template and starts no instance refresh.
+
 ## [2.1.0] - 2026-11-19
 
 Upgrading with `ami_ids` null: the first plan adds the AMI updater (Lambda, role and policy, log group, schedule rule and target, two alarms), `terraform_data.image_pin`, the instant repoint rule and its permission, and updates both launch templates (new `user_data`), the group, the instance and repoint policies, the repoint rule and Lambda, and the delivery bucket's instance files. It plans no `image_id` change and no template replacement. The new `user_data` makes the group start one instance refresh, an outage of about 5 to 8 minutes while the new instance boots; nothing else triggers one.

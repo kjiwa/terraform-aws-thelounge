@@ -296,6 +296,7 @@ def test_worst_case_waits_fit_in_the_lambda_timeout(repoint):
     worst_case = (
         2 * repoint.VPC_ORIGIN_DEPLOY_BUDGET_SECONDS
         + repoint.DISTRIBUTION_DEPLOY_BUDGET_SECONDS
+        + repoint.INSTANCE_LOOKUP_SECONDS
     )
 
     assert worst_case < timeout
@@ -464,3 +465,63 @@ def test_lock_outlives_the_lambda_timeout(repoint):
     timeout = int(re.search(r"^\s*timeout\s*=\s*(\d+)", tf, re.MULTILINE).group(1))
 
     assert repoint.LOCK_TTL_SECONDS > timeout
+    assert repoint.SWEEP_GRACE_SECONDS > timeout
+
+
+RUNNING_EVENT = {
+    "source": "aws.ec2",
+    "detail-type": "EC2 Instance State-change Notification",
+    "detail": {"instance-id": INSTANCE, "state": "running"},
+}
+
+
+def lookups(monkeypatch, repoint, results):
+    """Replace the instance lookup with `results`, the last repeating."""
+    calls = []
+
+    def lookup():
+        calls.append(1)
+        return results[min(len(calls), len(results)) - 1]
+
+    monkeypatch.setattr(repoint, "_running_instance", lookup)
+    monkeypatch.setattr(repoint.time, "sleep", lambda seconds: None)
+    return calls
+
+
+def test_event_whose_instance_appears_late_makes_one_repoint(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+    instance = {"InstanceId": INSTANCE, "PrivateDnsName": DNS}
+    calls = lookups(monkeypatch, repoint, [None, None, instance])
+
+    repoint.handler(RUNNING_EVENT, None)
+
+    assert cloudfront.updates == 1
+    assert len(calls) >= 3
+    assert LOCK not in ssm.values
+
+
+def test_event_with_no_instance_gives_up_after_the_bound(monkeypatch, repoint):
+    ssm = FakeSsm({CHAT: "vo_old_chat", STATUS: "vo_old_status"})
+    cloudfront = replacement(monkeypatch, repoint, ssm)
+    calls = lookups(monkeypatch, repoint, [None])
+
+    repoint.handler(RUNNING_EVENT, None)
+
+    attempts = (
+        repoint.INSTANCE_LOOKUP_SECONDS // repoint.INSTANCE_LOOKUP_INTERVAL_SECONDS
+    )
+    assert len(calls) == attempts + 1
+    assert cloudfront.updates == 0
+    assert ssm.puts == []
+    assert LOCK not in ssm.values
+
+
+def test_poll_without_an_instance_does_not_wait(monkeypatch, repoint):
+    ssm = FakeSsm({})
+    replacement(monkeypatch, repoint, ssm)
+    calls = lookups(monkeypatch, repoint, [None])
+
+    repoint.handler({"source": "aws.events"}, None)
+
+    assert len(calls) == 1

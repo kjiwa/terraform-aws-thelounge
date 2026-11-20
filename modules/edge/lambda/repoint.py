@@ -7,7 +7,7 @@ zero-IPv4 stand-in for the EIP re-association a user_data script would do if
 the instance still had a public IP to reassign.
 
 Triggered by the instance's launch event for a fast repoint, and by a
-5-minute schedule (repoint_lambda.tf) that self-heals from any failure the
+1-minute schedule (repoint_lambda.tf) that self-heals from any failure the
 event run left behind: a one-shot event handler alone would leave the
 distribution stuck on a dead origin until the next instance replacement. Each
 run is cheap when nothing has changed (a handful of read-only calls).
@@ -96,15 +96,21 @@ DISTRIBUTION_ID = os.environ["DISTRIBUTION_ID"]
 # (repoint_lambda.tf; test_repoint.py asserts it). A run that exceeds its
 # budget gives up and the next scheduled tick resumes from the origin it
 # created, found by name.
-VPC_ORIGIN_DEPLOY_BUDGET_SECONDS = 300
+VPC_ORIGIN_DEPLOY_BUDGET_SECONDS = 270
 DISTRIBUTION_DEPLOY_BUDGET_SECONDS = 240
 POLL_INTERVAL_SECONDS = 5
+
+# The running event can fire before the instance shows in DescribeInstances
+# with its tags, so an event-triggered run looks again for this long instead
+# of giving up (it counts toward the Lambda's timeout like the deploy waits).
+INSTANCE_LOOKUP_SECONDS = 90
+INSTANCE_LOOKUP_INTERVAL_SECONDS = 5
 
 # Longer than the Lambda's timeout (repoint_lambda.tf; test_repoint.py asserts
 # it), so a held lock always belongs to a live run or a dead one, and a dead
 # run's lock expires on its own.
 LOCK_PARAMETER = "/thelounge/edge/repoint-lock"
-LOCK_TTL_SECONDS = 900
+LOCK_TTL_SECONDS = 960
 
 # Set by a run that finds the lock held, so the holder makes one more pass
 # before releasing: the event that run carried (a replacement entering
@@ -114,7 +120,7 @@ PENDING_PARAMETER = "/thelounge/edge/repoint-pending"
 # An unreferenced origin younger than this may belong to a concurrent run
 # that has not attached it yet, so the sweep leaves it alone. Exceeds the
 # Lambda's timeout, the longest a run can hold one.
-SWEEP_GRACE_SECONDS = 900
+SWEEP_GRACE_SECONDS = 960
 
 # See the module docstring's "Two origins, one instance" section. 20 leaves
 # five slots of headroom under the 25-per-account quota for the
@@ -447,7 +453,20 @@ def _take_pending():
     return True
 
 
+def _event_is_instance_running(event):
+    return event.get("source") == "aws.ec2"
+
+
+def _wait_for_instance():
+    for _ in range(INSTANCE_LOOKUP_SECONDS // INSTANCE_LOOKUP_INTERVAL_SECONDS):
+        if _running_instance() is not None:
+            return
+        time.sleep(INSTANCE_LOOKUP_INTERVAL_SECONDS)
+
+
 def handler(event, context):
+    if _event_is_instance_running(event):
+        _wait_for_instance()
     lock = _acquire_lock()
     if lock is None:
         _mark_pending()
