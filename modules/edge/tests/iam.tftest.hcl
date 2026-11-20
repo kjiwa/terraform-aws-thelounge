@@ -135,7 +135,7 @@ run "repoint_runs_on_an_instance_running_event_and_a_five_minute_poll" {
   }
 
   assert {
-    condition     = aws_cloudwatch_event_target.repoint_instance_running[0].arn == aws_lambda_function.repoint[0].arn
-    error_message = "The event rule must invoke the repoint Lambda."
+    condition     = aws_cloudwatch_event_target.repoint_instance_running[0].rule == "thelounge-repoint-instance-running" && aws_lambda_permission.repoint_instance_running[0].principal == "events.amazonaws.com"
+    error_message = "The event rule must target the repoint Lambda, which must allow events to invoke it."
   }
 }

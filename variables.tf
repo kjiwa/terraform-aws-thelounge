@@ -31,7 +31,7 @@ variable "az" {
 }
 
 variable "active" {
-  description = "If false, the environment sleeps: the ASG holds zero instances, and the availability canary and alarm notifications are suspended, while all state (data volume, DNS, ACM certificate, last build) is retained. Waking (flip true, apply) self-deploys the last release via the converge timer. Deploys still require an awake environment."
+  description = "If false, the environment sleeps: the ASG holds zero instances, and the availability canary and alarm notifications are suspended, while all state (data volume, DNS, ACM certificate, last build) is retained. Sleeping still costs about 1.90 USD a month (see the README). Waking (flip true, apply) self-deploys the last release via the converge timer. Deploys still require an awake environment."
   type        = bool
   default     = true
 }
@@ -69,9 +69,20 @@ variable "instance_requirements" {
 }
 
 variable "ami_ids" {
-  description = "Per-architecture AMI IDs, keyed \"arm64\" and \"x86_64\". Null (default) resolves both from AL2023 SSM public parameters at apply time. Pin to freeze the fleet at a specific image; changes roll out via the ASG's instance refresh. A pin that differs from the latest release warns on every plan."
+  description = "Per-architecture AMI IDs, keyed \"arm64\" and \"x86_64\". Null (default) starts the launch templates on the latest AL2023 release and runs the AMI updater to follow later ones (see the README). A pin runs no updater: changing it replaces the launch templates and so the instance."
   type        = map(string)
   default     = null
+}
+
+variable "ami_max_age_days" {
+  description = "Age in days past which the running instance's AMI makes the AMI updater replace the instance, once a newer AMI is targeted. That replacement is an outage of about 5 to 8 minutes. Otherwise a newer AMI is picked up by the next replacement, such as a Spot reclaim. Ignored with ami_ids."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.ami_max_age_days >= 0
+    error_message = "ami_max_age_days must not be negative."
+  }
 }
 
 variable "rightsize_schedule" {
@@ -136,9 +147,14 @@ variable "thelounge_users" {
 }
 
 variable "data_volume_size_gb" {
-  description = "EBS data volume size in GB."
+  description = "EBS data volume size in GB, a whole number from 1 to 16384 (gp3). Raising it is an in-place resize; EBS cannot shrink a volume, so lowering it fails at apply."
   type        = number
   default     = 8
+
+  validation {
+    condition     = var.data_volume_size_gb == floor(var.data_volume_size_gb) && var.data_volume_size_gb >= 1 && var.data_volume_size_gb <= 16384
+    error_message = "data_volume_size_gb must be a whole number from 1 to 16384."
+  }
 }
 
 variable "data_volume_snapshot_id" {

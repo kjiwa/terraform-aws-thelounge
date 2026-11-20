@@ -157,6 +157,18 @@ data "aws_iam_policy_document" "instance" {
     }
   }
 
+  # The spot drain marks the instance Unhealthy at the interruption notice so
+  # the replacement starts then. The ARN is constructed, not referenced: the
+  # group depends on this policy, so a reference would be a cycle. The name
+  # is a constant, and the wildcard is the account-scoped UUID segment AWS
+  # generates, so this is exactly the one group.
+  statement {
+    sid       = "SetSelfUnhealthy"
+    effect    = "Allow"
+    actions   = ["autoscaling:SetInstanceHealth"]
+    resources = ["arn:aws:autoscaling:${var.region}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*:autoScalingGroupName/${local.name_env}"]
+  }
+
   # Disk usage metric (thelounge-disk-metric.sh). PutMetricData is not
   # resource-scopable; the namespace condition limits it to this stack's own.
   statement {
