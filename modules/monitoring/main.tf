@@ -7,7 +7,7 @@ locals {
 }
 
 module "availability" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.8.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/availability?ref=v0.9.0"
 
   name_prefix      = "thelounge"
   metric_namespace = "TheLounge"
@@ -23,7 +23,7 @@ module "availability" {
 }
 
 module "host_alarms" {
-  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.8.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-status-page.git//modules/host-alarms?ref=v0.9.0"
 
   name_prefix                       = "thelounge"
   metric_namespace                  = "TheLounge"

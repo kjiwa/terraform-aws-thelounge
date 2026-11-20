@@ -2,6 +2,21 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.2.0] - 2026-11-20
+
+### Added
+
+- A CloudFront response headers policy on the client, `/status/api` and the status page behaviors (the status module sets no headers): HSTS (one year, no subdomains or preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP.
+
+### Changed
+
+- The status page is terraform-aws-status-page v0.9.0: 44 px touch targets, scoped captions, the running image's age, median recovery, and a read of the launch template versions for a pending newer image.
+
+### Upgrade
+
+- The plan also updates the status Lambda's code and policy.
+- The plan adds one response headers policy and updates the distribution in place. CloudFront redeploys with no downtime expected, and no instance refresh starts.
+
 ## [2.1.1] - 2026-11-20
 
 ### Fixed

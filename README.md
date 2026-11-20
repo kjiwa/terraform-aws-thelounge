@@ -173,6 +173,7 @@ At the 2-minute interruption notice the instance stops The Lounge, unmounts and 
 ## Security and limits
 
 - The only inbound path is CloudFront. With the default zero-IPv4 posture the instance has no public address, and the origin security group admits the CloudFront origin-facing prefix list only.
+- CloudFront adds HSTS (one year), nosniff, a strict-origin-when-cross-origin referrer policy, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP to the client and the status page.
 - `thelounge_users` values authenticate access to the deployment. Treat them as sensitive; they live in Terraform state and in the delivery bucket.
 - One deployment per AWS account: the delivery bucket and CodeBuild projects are named per account, and `env` namespaces only per-environment resources.
 - `prevent_destroy` on the data volume makes `terraform destroy` stop by design.
