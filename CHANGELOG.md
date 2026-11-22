@@ -2,6 +2,20 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.3.2] - 2026-11-22
+
+### Added
+
+- A plan check, `ident_account_names`, warns when `ident` is on and a `thelounge_users` key contains `@`.
+
+### Changed
+
+- The `ident` docs now say the identd reply is the login account name (the `thelounge_users` key), not the network's Username field, so an email-style key is shown on IRC.
+
+### Upgrade
+
+- No resource changes.
+
 ## [2.3.1] - 2026-11-22
 
 ### Fixed

@@ -545,3 +545,28 @@ run "rejects_ident_server_that_is_not_a_hostname" {
   }
   expect_failures = [var.ident]
 }
+
+run "ident_warns_on_an_email_style_account_name" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ident           = { enabled = true }
+    thelounge_users = { "alice@example.org" = "hash-of-the-password" }
+  }
+  expect_failures = [check.ident_account_names]
+}
+
+run "ident_accepts_a_plain_account_name" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ident           = { enabled = true }
+    thelounge_users = { "alice" = "hash-of-the-password" }
+  }
+}
