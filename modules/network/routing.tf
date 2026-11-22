@@ -1,7 +1,7 @@
 # IPv6-only equivalent of a NAT gateway: lets the instance initiate outbound
-# IPv6 (IRC) without accepting inbound (except tcp/113 with var.ident, see
-# ident.tf), and unlike a NAT gateway it has no
-# hourly or per-GB charge. There is no IPv4 route out of this VPC unless
+# IPv6 (IRC) without accepting inbound, and unlike a NAT gateway it has no
+# hourly or per-GB charge. With var.ident on it sits unused while ::/0 uses the
+# internet gateway (see ident.tf). There is no IPv4 route out of this VPC unless
 # var.enable_public_ipv4 turns on the paid hatch in public_ipv4.tf.
 resource "aws_egress_only_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
@@ -14,7 +14,7 @@ resource "aws_egress_only_internet_gateway" "this" {
 # Required marker for CloudFront VPC origins: a VPC origin is rejected unless
 # an internet gateway is attached to the VPC. By default it carries no route
 # (the IPv4 default route lives in public_ipv4.tf, added only by the paid
-# hatch; the IPv6 ones are the ident routes in ident.tf) and no instance has a
+# hatch; the IPv6 one is ::/0 below when ident is on) and no instance has a
 # public IPv4, so nothing is reachable through it -- it only tells CloudFront
 # the VPC may receive its traffic. Free to attach.
 resource "aws_internet_gateway" "this" {
@@ -44,12 +44,14 @@ resource "aws_route_table_association" "this" {
 }
 
 # One route that switches gateway in place, not two counted routes: both
-# would claim ::/0 and collide during create-before-destroy.
+# would claim ::/0 and collide during create-before-destroy. With ident on it
+# targets the internet gateway; AWS forbids mixing an internet gateway route
+# and an egress-only gateway route for IPv6 in one table.
 resource "aws_route" "ipv6_egress" {
   route_table_id              = aws_route_table.this.id
   destination_ipv6_cidr_block = "::/0"
-  gateway_id                  = local.ident_open ? aws_internet_gateway.this.id : null
-  egress_only_gateway_id      = local.ident_open ? null : aws_egress_only_internet_gateway.this.id
+  gateway_id                  = var.ident.enabled ? aws_internet_gateway.this.id : null
+  egress_only_gateway_id      = var.ident.enabled ? null : aws_egress_only_internet_gateway.this.id
 }
 
 # Gateway endpoint: free, and with no internet path this is the only way the

@@ -1,11 +1,10 @@
 # IRC servers connect back to tcp/113 to ask who owns a connection. The
-# egress-only gateway drops that inbound flow, so ident needs a route through
-# the internet gateway, which has no charge.
-#
-# With no servers listed, the whole IPv6 default route moves to the internet
-# gateway (routing.tf) and tcp/113 opens to ::/0. With servers, each resolved
-# address gets its own /128 route and rule, and everything else stays on the
-# egress-only gateway.
+# egress-only gateway drops that inbound flow, so with ident on the IPv6
+# default route moves to the internet gateway (routing.tf), which has no
+# charge. AWS refuses a narrower IPv6 route through an internet gateway in a
+# table that has an egress-only gateway route, so the security group alone
+# decides inbound: tcp/113 from ::/0 with no servers listed, or from each
+# resolved address with servers.
 locals {
   ident_open    = var.ident.enabled && length(var.ident.servers) == 0
   ident_servers = var.ident.enabled ? toset(var.ident.servers) : toset([])
@@ -19,13 +18,6 @@ locals {
 data "dns_aaaa_record_set" "ident" {
   for_each = local.ident_servers
   host     = each.value
-}
-
-resource "aws_route" "ident_server" {
-  for_each                    = local.ident_addresses
-  route_table_id              = aws_route_table.this.id
-  destination_ipv6_cidr_block = "${each.value}/128"
-  gateway_id                  = aws_internet_gateway.this.id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ident_open" {

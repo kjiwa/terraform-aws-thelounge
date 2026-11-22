@@ -11,7 +11,7 @@ variable "enable_public_ipv4" {
 }
 
 variable "ident" {
-  description = "Open inbound tcp/113 so IRC servers can query The Lounge's identd. Free: an internet gateway and its routes have no charge. Exposure: tcp/113 from ::/0 when servers is empty (the IPv6 default route then points at the internet gateway), or from each resolved AAAA address of servers only, over /128 routes, with ::/0 left on the egress-only gateway."
+  description = "Open inbound tcp/113 so IRC servers can query The Lounge's identd. Free: an internet gateway and its routes have no charge. Enabling it points the IPv6 default route at the internet gateway in place of the egress-only gateway. Exposure: tcp/113 from ::/0 when servers is empty, or from each resolved AAAA address of servers only; the security group decides inbound."
   type = object({
     enabled = optional(bool, false)
     servers = optional(list(string), [])

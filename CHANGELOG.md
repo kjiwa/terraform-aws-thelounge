@@ -2,6 +2,18 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.3.1] - 2026-11-22
+
+### Fixed
+
+- v2.3.0's non-empty `ident.servers` fails to apply: AWS refuses a `/128` IPv6 route through an internet gateway in a route table that has an egress-only gateway route (`OperationNotPermitted`). The per-address routes are gone. With `ident` on, the single `::/0` route moves to the internet gateway in both modes, and the security group alone decides inbound: tcp/113 from `::/0` with empty `servers`, from each resolved `/128` otherwise.
+
+### Upgrade
+
+- With `ident` off, no change.
+- With `ident` on and empty `servers`, no change.
+- With `ident` on and non-empty `servers`, the plan drops the failed `/128` routes (if any exist) and points `::/0` at the internet gateway in place.
+
 ## [2.3.0] - 2026-11-22
 
 ### Added
