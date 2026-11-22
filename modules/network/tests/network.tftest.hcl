@@ -28,8 +28,8 @@ run "ident_off" {
   }
 
   assert {
-    condition     = length(aws_route.ident_server) == 0 && length(aws_vpc_security_group_ingress_rule.ident_open) == 0 && length(aws_vpc_security_group_ingress_rule.ident_server) == 0
-    error_message = "With ident off, no ident route or tcp/113 rule may exist."
+    condition     = length(aws_vpc_security_group_ingress_rule.ident_open) == 0 && length(aws_vpc_security_group_ingress_rule.ident_server) == 0
+    error_message = "With ident off, no tcp/113 rule may exist."
   }
 }
 
@@ -41,7 +41,7 @@ run "ident_off_ignores_servers" {
   }
 
   assert {
-    condition     = length(aws_route.ident_server) == 0 && length(aws_vpc_security_group_ingress_rule.ident_server) == 0
+    condition     = length(aws_vpc_security_group_ingress_rule.ident_server) == 0 && aws_route.ipv6_egress.egress_only_gateway_id != null
     error_message = "Listed servers must do nothing while ident is disabled."
   }
 }
@@ -64,8 +64,8 @@ run "ident_on_without_servers" {
   }
 
   assert {
-    condition     = length(aws_route.ident_server) == 0 && length(aws_vpc_security_group_ingress_rule.ident_server) == 0
-    error_message = "With no servers there are no per-address routes or rules."
+    condition     = length(aws_vpc_security_group_ingress_rule.ident_server) == 0
+    error_message = "With no servers there are no per-address rules."
   }
 }
 
@@ -77,13 +77,8 @@ run "ident_on_with_servers" {
   }
 
   assert {
-    condition     = aws_route.ipv6_egress.egress_only_gateway_id != null && aws_route.ipv6_egress.gateway_id == null
-    error_message = "With servers listed, ::/0 must stay on the egress-only gateway."
-  }
-
-  assert {
-    condition     = aws_route.ident_server["2001:db8::1"].destination_ipv6_cidr_block == "2001:db8::1/128" && aws_route.ident_server["2001:db8::1"].gateway_id != null
-    error_message = "Each server address must get a /128 route through the internet gateway."
+    condition     = aws_route.ipv6_egress.destination_ipv6_cidr_block == "::/0" && aws_route.ipv6_egress.gateway_id != null && aws_route.ipv6_egress.egress_only_gateway_id == null
+    error_message = "With servers listed, the single ::/0 route must point at the internet gateway: AWS refuses an internet gateway route for a narrower IPv6 destination in a table that has an egress-only gateway route."
   }
 
   assert {
