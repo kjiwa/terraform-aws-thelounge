@@ -2,6 +2,24 @@
 
 All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/2.0.0/), and the project follows [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release may include breaking changes.
 
+## [2.3.0] - 2026-11-22
+
+### Added
+
+- `ident` (default off): runs The Lounge's identd on tcp/113 so IRC servers see the account name instead of a `~` username. Free: an internet gateway and its routes have no charge. Optional `ident.servers`: empty opens tcp/113 from `::/0` and moves the IPv6 default route to the internet gateway; hostnames get a `/128` route and a tcp/113 rule per resolved AAAA address, with `::/0` left on the egress-only gateway.
+- The `hashicorp/dns` provider, pinned to 3.6.2, resolves `ident.servers` at plan time.
+
+### Changed
+
+- `thelounge_config` may not set `identd`: `ident` owns it.
+- The Lounge's unit always carries `CAP_NET_BIND_SERVICE`, so it can bind tcp/113 as a non-root user.
+
+### Upgrade
+
+- `terraform init -upgrade` installs the dns provider.
+- With `ident` off, the plan changes only the delivery bucket's unit file; the next converge tick installs it and restarts The Lounge once.
+- With `ident` on, the plan also rewrites `config.js`, adds the ident rules, and, with empty `servers`, switches the IPv6 default route to the internet gateway in place.
+
 ## [2.2.0] - 2026-11-20
 
 ### Added

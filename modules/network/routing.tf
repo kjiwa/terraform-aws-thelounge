@@ -1,5 +1,6 @@
 # IPv6-only equivalent of a NAT gateway: lets the instance initiate outbound
-# IPv6 (IRC) without accepting inbound, and unlike a NAT gateway it has no
+# IPv6 (IRC) without accepting inbound (except tcp/113 with var.ident, see
+# ident.tf), and unlike a NAT gateway it has no
 # hourly or per-GB charge. There is no IPv4 route out of this VPC unless
 # var.enable_public_ipv4 turns on the paid hatch in public_ipv4.tf.
 resource "aws_egress_only_internet_gateway" "this" {
@@ -11,10 +12,11 @@ resource "aws_egress_only_internet_gateway" "this" {
 }
 
 # Required marker for CloudFront VPC origins: a VPC origin is rejected unless
-# an internet gateway is attached to the VPC. It carries no route (the IPv4
-# default route lives in public_ipv4.tf, added only by the paid hatch) and no
-# instance has a public IPv4, so nothing is reachable through it -- it only
-# tells CloudFront the VPC may receive its traffic. Free to attach.
+# an internet gateway is attached to the VPC. By default it carries no route
+# (the IPv4 default route lives in public_ipv4.tf, added only by the paid
+# hatch; the IPv6 ones are the ident routes in ident.tf) and no instance has a
+# public IPv4, so nothing is reachable through it -- it only tells CloudFront
+# the VPC may receive its traffic. Free to attach.
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
@@ -27,7 +29,7 @@ resource "aws_internet_gateway" "this" {
 # conditional (public_ipv4.tf adds one only when the hatch is on), and mixing
 # inline route blocks with standalone aws_route resources on the same table
 # fights itself on every apply. So every route for this table, including the
-# unconditional IPv6 one below, is a standalone aws_route resource.
+# IPv6 default below, is a standalone aws_route resource.
 resource "aws_route_table" "this" {
   vpc_id = aws_vpc.this.id
 
@@ -41,10 +43,13 @@ resource "aws_route_table_association" "this" {
   route_table_id = aws_route_table.this.id
 }
 
+# One route that switches gateway in place, not two counted routes: both
+# would claim ::/0 and collide during create-before-destroy.
 resource "aws_route" "ipv6_egress" {
   route_table_id              = aws_route_table.this.id
   destination_ipv6_cidr_block = "::/0"
-  egress_only_gateway_id      = aws_egress_only_internet_gateway.this.id
+  gateway_id                  = local.ident_open ? aws_internet_gateway.this.id : null
+  egress_only_gateway_id      = local.ident_open ? null : aws_egress_only_internet_gateway.this.id
 }
 
 # Gateway endpoint: free, and with no internet path this is the only way the

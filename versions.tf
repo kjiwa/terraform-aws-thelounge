@@ -9,5 +9,9 @@ terraform {
       # default provider's region is.
       configuration_aliases = [aws.us_east_1]
     }
+    dns = {
+      source  = "hashicorp/dns"
+      version = "3.6.2"
+    }
   }
 }

@@ -29,6 +29,12 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "dns" {
+  mock_data "dns_aaaa_record_set" {
+    defaults = { addrs = ["2001:db8::1"] }
+  }
+}
+
 override_resource {
   target          = module.edge.aws_acm_certificate.this
   override_during = plan
@@ -484,4 +490,58 @@ run "rejects_a_fractional_data_volume" {
   }
 
   expect_failures = [var.data_volume_size_gb]
+}
+
+run "ident_off_pins_no_identd" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  assert {
+    condition     = !contains(keys(local.thelounge_config_merged), "identd")
+    error_message = "With ident off, config.js must not enable identd."
+  }
+}
+
+run "ident_enabled_pins_identd" {
+  command = plan
+  providers = {
+    dns           = dns
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ident = { enabled = true, servers = ["irc.example.net"] }
+  }
+
+  assert {
+    condition     = local.thelounge_config_merged.identd.enable == true && local.thelounge_config_merged.identd.port == 113
+    error_message = "ident.enabled must pin identd on port 113 in config.js."
+  }
+}
+
+run "rejects_pinned_config_key_identd" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    thelounge_config = { identd = { enable = false } }
+  }
+  expect_failures = [var.thelounge_config]
+}
+
+run "rejects_ident_server_that_is_not_a_hostname" {
+  command = plan
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+  variables {
+    ident = { enabled = true, servers = ["irc.example.net/24"] }
+  }
+  expect_failures = [var.ident]
 }

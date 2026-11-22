@@ -124,13 +124,13 @@ variable "node_version" {
 }
 
 variable "thelounge_config" {
-  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port), which it may not override. Rendered to the delivery bucket."
+  description = "Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge_config_defaults: private mode, proxy trust, bind address, port, identd per var.ident), which it may not override. Rendered to the delivery bucket."
   type        = any
   default     = {}
 
   validation {
-    condition     = var.thelounge_config == null || length(setintersection(keys(var.thelounge_config), ["public", "reverseProxy", "host", "port"])) == 0
-    error_message = "thelounge_config must not set public, reverseProxy, host or port: this stack pins them because the security group, VPC origin and user_data depend on their values."
+    condition     = var.thelounge_config == null || length(setintersection(keys(var.thelounge_config), ["public", "reverseProxy", "host", "port", "identd"])) == 0
+    error_message = "thelounge_config must not set public, reverseProxy, host, port or identd: this stack pins them because the security group, VPC origin and user_data depend on their values."
   }
 }
 
@@ -231,6 +231,20 @@ variable "enable_public_ipv4" {
   description = "Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. The CloudFront-to-EIP hop is plain HTTP (origin_protocol_policy http-only), so it crosses the public internet unencrypted. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead."
   type        = bool
   default     = false
+}
+
+variable "ident" {
+  description = "Run The Lounge's identd on tcp/113 so IRC servers see the account name instead of a \"~\" username. Free: an internet gateway and its routes have no charge. Exposure: inbound tcp/113 to the app security group. servers is optional. Empty (the default) opens tcp/113 from ::/0 and switches the IPv6 default route from the egress-only gateway to the internet gateway, so the return path reaches any server. Non-empty hostnames each resolve to their AAAA addresses at plan time, get a /128 route and a tcp/113 rule, and leave ::/0 on the egress-only gateway. The Lounge answers only the connection a query names, matched on both addresses and both ports; every other query gets NO-USER."
+  type = object({
+    enabled = optional(bool, false)
+    servers = optional(list(string), [])
+  })
+  default = {}
+
+  validation {
+    condition     = alltrue([for s in var.ident.servers : can(regex("^(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$", s))])
+    error_message = "ident.servers entries must be hostnames."
+  }
 }
 
 variable "catchup" {
