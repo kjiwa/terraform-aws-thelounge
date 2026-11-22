@@ -144,3 +144,10 @@ module "status" {
     dest_reader_role_arn  = local.backup_dest_reader_role_arn
   }
 }
+
+check "ident_account_names" {
+  assert {
+    condition     = !var.ident.enabled || !anytrue([for name in nonsensitive(keys(var.thelounge_users)) : strcontains(name, "@")])
+    error_message = "With ident on, IRC servers see the login account name, so an email-style thelounge_users key exposes its local part."
+  }
+}
