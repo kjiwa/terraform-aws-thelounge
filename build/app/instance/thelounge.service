@@ -34,5 +34,10 @@ ReadWritePaths=/srv/thelounge
 PrivateTmp=true
 ProtectHome=true
 
+# Port 113 for identd is privileged; the unit is one static file shared by
+# every config, so it always carries the capability.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 [Install]
 WantedBy=multi-user.target

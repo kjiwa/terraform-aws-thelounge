@@ -20,6 +20,7 @@ AVD-AWS-0011
 # Open egress on the app security group: the instance has no NAT gateway
 # and needs outbound IPv6 to arbitrary IRC servers and AWS endpoints, which
 # no fixed destination list can enumerate. Ingress is limited to the
-# CloudFront VPC origin and the Instance Connect Endpoint
-# (modules/network/security_groups.tf).
+# CloudFront VPC origin, the Instance Connect Endpoint
+# (modules/network/security_groups.tf) and, with ident, tcp/113
+# (modules/network/ident.tf).
 AVD-AWS-0104

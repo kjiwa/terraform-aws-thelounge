@@ -5,6 +5,7 @@ module "network" {
 
   az                 = var.az
   enable_public_ipv4 = var.enable_public_ipv4
+  ident              = var.ident
 }
 
 module "app_delivery" {

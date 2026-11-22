@@ -5,12 +5,12 @@ locals {
   # group/VPC origin/user_data contract all agree on. var.thelounge_config
   # may not set these keys (validated); everything else is left to it and
   # The Lounge's own upstream defaults.
-  thelounge_config_defaults = {
+  thelounge_config_defaults = merge({
     public       = false
     reverseProxy = true
     host         = "::"
     port         = 9000
-  }
+  }, var.ident.enabled ? { identd = { enable = true, port = 113 } } : {})
   thelounge_config_merged = merge(local.thelounge_config_defaults, var.thelounge_config)
 
   # JSON is valid JS, so config.js can be produced from plain Terraform data

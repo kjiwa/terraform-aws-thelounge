@@ -2,7 +2,7 @@
 
 A Terraform module that runs [The Lounge](https://thelounge.chat/), a self-hosted web IRC client that stays connected for you, on AWS for a few dollars a month. It is an independent project, unofficial and not affiliated with or endorsed by The Lounge project.
 
-The module serves one shape: a single instance, Spot or On-Demand, behind CloudFront, with the data on an EBS volume. There is no public IPv4 address by default. IRC rides outbound IPv6, the web client reaches the instance through a CloudFront VPC origin, and the one break-glass door is EC2 Instance Connect Endpoint SSH. The instance backs up locally, to a second region, or to a second AWS account. Optional parts are `/summarize` and `/ask` channel catch-up on Amazon Bedrock and an operational status page, served by [terraform-aws-status-page](https://github.com/kjiwa/terraform-aws-status-page).
+The module serves one shape: a single instance, Spot or On-Demand, behind CloudFront, with the data on an EBS volume. There is no public IPv4 address by default. IRC rides outbound IPv6, the web client reaches the instance through a CloudFront VPC origin, and the one break-glass door is EC2 Instance Connect Endpoint SSH. With `ident` on, IRC servers may also query tcp/113. The instance backs up locally, to a second region, or to a second AWS account. Optional parts are `/summarize` and `/ask` channel catch-up on Amazon Bedrock and an operational status page, served by [terraform-aws-status-page](https://github.com/kjiwa/terraform-aws-status-page).
 
 Required inputs are `domain_name`, `zone_id`, and `alert_email`. Everything else has a default; the [module reference](#module-reference) lists them.
 
@@ -101,6 +101,17 @@ Add IRC networks in the client. With IPv6-only egress:
 - Some servers present self-signed or expired certificates; uncheck "Only allow trusted certificates" for those networks.
 - The Lounge keeps IRC connections open server-side, so closing the browser does not disconnect you.
 
+## IRC ident
+
+`ident = { enabled = true }` runs The Lounge's identd on tcp/113, so IRC servers see the account name instead of a `~` username. It is free: an internet gateway and its routes have no charge. The cost is exposure: inbound tcp/113 to the app security group.
+
+The Lounge answers a query only when the querier's address and both ports match a live IRC connection of its own, so a stranger cannot enumerate users; every other query gets `ERROR : NO-USER`. The reply is the signed-in account name (the `thelounge_users` key), and the network's Username field when the connection has no account name.
+
+Networks are added in the client, so the module cannot know their servers. `ident.servers` is optional:
+
+- Empty (the default): tcp/113 opens from `::/0`, and the IPv6 default route moves from the egress-only gateway to the internet gateway, so the return path reaches any server.
+- Hostnames: each resolves to its AAAA addresses at plan time and gets a `/128` route and a tcp/113 rule, and `::/0` stays on the egress-only gateway. A host with no AAAA record fails the plan, and a changed address shows as a diff on the next plan.
+
 ## Status page
 
 `https://<hostname>.<domain_name>/status` is the status-page core configured for The Lounge: reliability, incidents, Spot interruptions, a change log, host and storage panels, a Backups panel (job history and the off-site vault's lock state; off when `backup.mode` is `disabled`), an optional Bedrock panel, and facts from the instance. It is read-only and gated on being signed in to The Lounge: sign in at `/` first, then load `/status`. The gated routes call the instance, so they work only while chat is up.
@@ -172,7 +183,7 @@ At the 2-minute interruption notice the instance stops The Lounge, unmounts and 
 
 ## Security and limits
 
-- The only inbound path is CloudFront. With the default zero-IPv4 posture the instance has no public address, and the origin security group admits the CloudFront origin-facing prefix list only.
+- The only inbound path is CloudFront, except tcp/113 from IRC servers with `ident`. With the default zero-IPv4 posture the instance has no public address, and the origin security group admits the CloudFront origin-facing prefix list only.
 - CloudFront adds HSTS (one year), nosniff, a strict-origin-when-cross-origin referrer policy, `X-Frame-Options: SAMEORIGIN` and a `frame-ancestors 'self'` CSP to the client and the status page.
 - `thelounge_users` values authenticate access to the deployment. Treat them as sensitive; they live in Terraform state and in the delivery bucket.
 - One deployment per AWS account: the delivery bucket and CodeBuild projects are named per account, and `env` namespaces only per-environment resources.
@@ -214,6 +225,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Licensed 
 | ---- | ------- |
 | terraform | >= 1.15 |
 | aws | >= 6.45 |
+| dns | >= 3.4 |
 
 ## Resources
 
@@ -242,13 +254,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Licensed 
 | enable\_public\_ipv4 | Provision the paid IPv4 escape hatch: an internet gateway, a default route, and an EIP the instance associates at boot, plus a CloudFront custom origin pointed at it instead of a VPC origin. The CloudFront-to-EIP hop is plain HTTP (origin\_protocol\_policy http-only), so it crosses the public internet unencrypted. False by default -- the zero-IPv4 posture routes outbound over IPv6/the S3 gateway endpoint and reaches the instance via VPC origin instead. | `bool` | `false` | no |
 | env | Environment name, scoped into per-env resource names (IAM roles, ASG, pipeline, etc.). The delivery bucket and CodeBuild projects don't vary by env (already account-scoped), so deploy one environment per AWS account. | `string` | `"prod"` | no |
 | hostname | DNS label for the IRC client, prepended to domain\_name to form the CloudFront alias ("${hostname}.${domain\_name}", e.g. irc.example.org). | `string` | `"irc"` | no |
+| ident | Run The Lounge's identd on tcp/113 so IRC servers see the account name instead of a "~" username. Free: an internet gateway and its routes have no charge. Exposure: inbound tcp/113 to the app security group. servers is optional. Empty (the default) opens tcp/113 from ::/0 and switches the IPv6 default route from the egress-only gateway to the internet gateway, so the return path reaches any server. Non-empty hostnames each resolve to their AAAA addresses at plan time, get a /128 route and a tcp/113 rule, and leave ::/0 on the egress-only gateway. The Lounge answers only the connection a query names, matched on both addresses and both ports; every other query gets NO-USER. A listed host that rotates among several AAAA records is not supported, because the plan opens only the addresses it resolved. | ```object({ enabled = optional(bool, false) servers = optional(list(string), []) })``` | `{}` | no |
 | instance\_requirements | Wholesale override of the ASG instance spec (vCPU/memory floor, per-arch allowed types). Null (default) derives a spec sized for The Lounge's idle footprint. | ```object({ vcpu_min = number memory_mib_min = number allowed_types_arm64 = list(string) allowed_types_x86_64 = list(string) })``` | `null` | no |
 | node\_version | Node.js version the app-delivery pipeline's build environment uses to install and run The Lounge. | `string` | `"22.23.5"` | no |
 | rightsize\_min\_uptime\_hours | Minimum instance uptime before the rightsize watchdog may force a replacement -- bounds churn under an aggressive schedule, since a failed rightsize restarts the clock on the replacement (worst case: 24/this-many replacements per day). | `number` | `3` | no |
 | rightsize\_schedule | systemd OnCalendar expression for the rightsize watchdog's schedule (replacement when the cheapest eligible Spot pool costs at most 75% of the current type's price). Accepts a timezone suffix (e.g. "*-*-* 17:00:00 Europe/Berlin") to track DST. Applied via a user-data timer drop-in, so a change takes effect on the next instance replacement. Spot only. | `string` | `"*-*-* 09:00:00 UTC"` | no |
 | spot\_enabled | If true, the ASG uses Spot exclusively: a large discount off On-Demand, at the cost of frequent reclaim outages (one a day was typical, about 7 to 8 minutes each from the notice until the site serves again, measured in the availability-episodes log before v2.1.0; not yet measured since; to be measured on the next reclaim, floored by the CloudFront origin chain) and interruption emails. Default on here (the compute module itself defaults off) since the discount is worth it for a single instance. | `bool` | `true` | no |
 | status | Operational status page at /status on the chat hostname (object); off unless enabled. Signed-in Lounge users see every panel; the Lounge being down locks the gated routes. public\_reliability serves redacted uptime history at /status/public, readable while chat is down. bedrock adds the catch-up model's token panel and needs catchup.enabled. The page and public history are cached at CloudFront. The account's Lambda concurrency quota is 10, so the Lambda reserves none. | ```object({ enabled = optional(bool, false) public_reliability = optional(bool, false) bedrock = optional(bool, false) })``` | `{}` | no |
-| thelounge\_config | Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge\_config\_defaults: private mode, proxy trust, bind address, port), which it may not override. Rendered to the delivery bucket. | `any` | `{}` | no |
+| thelounge\_config | Overrides for The Lounge's config.js (see https://thelounge.chat/docs/configuration), shallow-merged over this stack's required defaults (locals.thelounge\_config\_defaults: private mode, proxy trust, bind address, port, identd per var.ident), which it may not override. Rendered to the delivery bucket. | `any` | `{}` | no |
 | thelounge\_plugins | The Lounge plugins to install into the build, as npm package specifiers (name or name@version). Empty list (the default) ships plain upstream The Lounge. | `list(string)` | `[]` | no |
 | thelounge\_users | Users to create, as username => bcrypt password hash (generate with `thelounge hash`, not the plaintext password). The converge script creates a user only if not already present, so existing users' networks/preferences are never overwritten. Treat the values as sensitive -- they authenticate access to this deployment. | `map(string)` | `{}` | no |
 | thelounge\_version | The Lounge npm package version the app-delivery pipeline builds. Bump and apply: the pipeline's desired-state object changes, which fires the build. | `string` | `"4.5.2"` | no |
