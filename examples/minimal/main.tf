@@ -1,5 +1,5 @@
 module "dns" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/dns?ref=v0.3.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/dns?ref=v0.4.0"
   providers = {
     aws           = aws
     aws.us_east_1 = aws.us_east_1
@@ -22,7 +22,7 @@ module "thelounge" {
 }
 
 module "audit" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/audit?ref=v0.3.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/audit?ref=v0.4.0"
 
   name_prefix            = "thelounge"
   metric_namespace       = "TheLoungeAudit"
@@ -36,7 +36,7 @@ module "audit" {
 }
 
 module "finops" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/finops?ref=v0.3.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/finops?ref=v0.4.0"
 
   name_prefix = "thelounge"
   alert_email = var.alert_email
