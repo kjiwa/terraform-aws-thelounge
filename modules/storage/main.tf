@@ -3,7 +3,7 @@ locals {
 }
 
 module "data_volume" {
-  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/data-volume?ref=v0.3.0"
+  source = "git::https://github.com/kjiwa/terraform-aws-keel.git//modules/data-volume?ref=v0.4.0"
 
   name_prefix   = local.name_prefix
   az            = var.az
